@@ -180,6 +180,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="top-banner">
     <div class="ticker" id="rolling-stats">
@@ -249,10 +250,11 @@
       <div class="info small" id="my-offers-status"></div>
     </div>
   </div>
+
   <script type="module">
     import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.esm.min.js';
 
-    const ESCROW_ADDRESS = "0x6895688Cf49B49f6678a29E9304f5e20F472E629";
+    const ESCROW_ADDRESS = "0x8e2768659A6Dcaee10b9Cbc7B7D6AcB8773a7ABD";
 
     const REQUIRED_CHAIN_ID = 14601;
     const SONIC_CHAIN_ID_HEX = '0x3909';
@@ -383,7 +385,7 @@
       el('wallet-status').textContent = 'Connected';
 
       await refreshUserStats();
-      await loadFulfilledOffers();   <!-- NEW -->
+      await loadFulfilledOffers();
     }
 
     async function refreshUserStats() {
@@ -391,7 +393,7 @@
       try {
         const [total, active, fulfilled, cancelled] = await escrowRead.getUserStats(account);
         el('user-offer-stats').textContent =
-          `total ${total.toString()} | active ${active.toString()} | filled ${fulfilled.toString()} | cancelled ${cancelled.toString()}`;
+          `total ${total} | active ${active} | filled ${fulfilled} | cancelled ${cancelled}`;
       } catch {
         el('user-offer-stats').textContent = '–';
       }
@@ -496,7 +498,7 @@
         el('collection-offers-status').textContent = e.message || 'Load failed';
       }
     }
-    // Load fulfilled offers into dropdown
+
     async function loadFulfilledOffers() {
       if (!escrowRead || !account) return;
 
@@ -527,7 +529,6 @@
       }
     }
 
-    // Clean, fixed approval logic for fulfilOffer
     async function fulfilOffer() {
       if (!escrowWrite || !account) {
         el('collection-offers-status').textContent = 'Connect wallet first';
@@ -632,7 +633,6 @@
       }
     }
 
-    // Updated withdrawNFT using dropdown
     async function withdrawNFT() {
       if (!escrowWrite || !account) {
         el('my-offers-status').textContent = 'Connect wallet first';
