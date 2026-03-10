@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline';
+      style-src 'self' https://fonts.googleapis.com 'unsafe-inline';
+      connect-src 'self' https://rpc.testnet.soniclabs.com;
+      font-src 'self' https://fonts.gstatic.com;
+    "/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>NFT Orderbook</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet"/>
+
+  <style>
+    :root {
+      --neon: #00ffe1;
+      --neon-dim: rgba(0,255,225,0.2);
+      --text-light: #e0e0e0;
+      --card-bg: rgba(255,255,255,0.05);
+      --radius: 16px;
+      --gap: 1.5rem;
+      --transition: 0.3s ease;
+      --banner-h: 48px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(circle at center,#1a1a3d,#0a0a1f);
+      color: var(--text-light);
+      font-family: 'Roboto', sans-serif;
+      padding: calc(var(--gap) + var(--banner-h)) var(--gap) var(--gap);
+      line-height: 1.4;
+    }
+
+    .top-banner {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: var(--banner-h);
+      background: linear-gradient(90deg, rgba(0,0,0,0.45), rgba(0,0,0,0.25));
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      z-index: 1000;
+      padding: 0 1rem;
+      backdrop-filter: blur(6px);
+    }
+    .ticker {
+      display: inline-block;
+      white-space: nowrap;
+      will-change: transform;
+      transform: translateX(100%);
+      animation: scroll-left 36s linear infinite;
+      animation-play-state: paused;
+      font-weight: 500;
+      color: var(--text-light);
+      font-size: 0.95rem;
+    }
+    .ticker.running { animation-play-state: running; }
+    @keyframes scroll-left {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
+    }
+    .stat-pill {
+      display: inline-block;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.04);
+      padding: 6px 12px;
+      margin-right: 12px;
+      border-radius: 999px;
+      color: var(--neon);
+      box-shadow: 0 0 8px rgba(0,255,225,0.04);
+    }
+
+    .brand {
+      text-align: center;
+      font-size: 2.3rem;
+      font-weight: 700;
+      color: var(--neon);
+      text-shadow: 0 0 8px var(--neon), 0 0 16px var(--neon);
+      margin-bottom: var(--gap);
+      letter-spacing: 2px;
+    }
+
+    #wallet-button {
+      position: fixed;
+      top: calc(var(--banner-h) + 8px);
+      right: var(--gap);
+      padding: .6rem 1.2rem;
+      border: 2px solid var(--neon);
+      background: transparent;
+      color: var(--neon);
+      border-radius: var(--radius);
+      font-weight: 500;
+      cursor: pointer;
+      transition: background var(--transition), color var(--transition);
+      z-index: 1101;
+    }
+    #wallet-button:hover { background: var(--neon-dim); color: #fff; }
+
+    .lower-section {
+      display: grid;
+      grid-template-columns: repeat(auto-fit,minmax(320px,1fr));
+      gap: var(--gap);
+    }
+    .box {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: var(--radius);
+      padding: var(--gap);
+      display: flex;
+      flex-direction: column;
+      transition: transform var(--transition), box-shadow var(--transition);
+    }
+    .box:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--neon);
+      text-align: center;
+      margin-bottom: 1rem;
+      text-shadow: 0 0 4px var(--neon);
+    }
+
+    label {
+      font-weight: 500;
+      margin-bottom: .35rem;
+      color: var(--text-light);
+      display: block;
+    }
+
+    input, select {
+      width: 100%;
+      padding: .55rem .6rem;
+      margin-bottom: .75rem;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.03);
+      color: var(--text-light);
+      font-size: 0.95rem;
+      transition: border var(--transition);
+    }
+    input:focus, select:focus { outline: none; border-color: var(--neon); }
+
+    button.action {
+      padding: .6rem .9rem;
+      border: 2px solid var(--neon);
+      background: transparent;
+      color: var(--neon);
+      border-radius: 8px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background var(--transition), color var(--transition);
+      margin-top: .25rem;
+      width: 100%;
+    }
+    button.action:hover { background: var(--neon-dim); color: #fff; }
+
+    .info {
+      text-align: center;
+      margin: .5rem 0;
+      font-size: .9rem;
+    }
+
+    .small {
+      font-size: 0.8rem;
+      opacity: 0.8;
+    }
+
+    .row-buttons {
+      display: flex;
+      gap: .5rem;
+      margin-top: .25rem;
+    }
+    .row-buttons button {
+      flex: 1;
+    }
+
+    @media (max-width: 600px) {
+      .ticker { animation-duration: 52s; font-size: 0.85rem; }
+      body { padding-top: calc(var(--banner-h) + 12px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="top-banner">
+    <div class="ticker" id="rolling-stats">
+      <span class="stat-pill">Network: Sonic Testnet</span>
+      <span class="stat-pill">RPC: <span id="rpc-status">Checking…</span></span>
+      <span class="stat-pill">Wallet: <span id="wallet-status">Disconnected</span></span>
+      <span class="stat-pill">My offers: <span id="user-offer-stats">–</span></span>
+    </div>
+  </div>
+
+  <div class="brand">NFT Orderbook</div>
+  <button id="wallet-button">Connect Wallet</button>
+
+  <div class="lower-section">
+    <!-- Create Offer -->
+    <div class="box">
+      <h1>Create Offer</h1>
+      <label for="offer-collection">NFT Collection</label>
+      <input id="offer-collection" placeholder="0x... (ERC721 collection)"/>
+
+      <label for="offer-amount">Offer Amount (S)</label>
+      <input id="offer-amount" type="number" min="0" step="0.0001" placeholder="Amount in S"/>
+
+      <label for="offer-expiry">Expiry (seconds, 0 = no expiry)</label>
+      <input id="offer-expiry" type="number" min="0" step="1" placeholder="e.g. 86400 for 1 day"/>
+
+      <div class="info small" id="offer-fee-preview">Fee: – | Total to send: –</div>
+
+      <button class="action" id="btn-preview-fee">Preview Fee</button>
+      <button class="action" id="btn-create-offer">Create Offer</button>
+
+      <div class="info" id="offer-status"></div>
+    </div>
+
+    <!-- Browse Offers by Collection -->
+    <div class="box">
+      <h1>Offers by Collection</h1>
+      <label for="browse-collection">NFT Collection</label>
+      <input id="browse-collection" placeholder="0x... (ERC721 collection)"/>
+
+      <button class="action" id="btn-load-collection-offers">Load Active Offers</button>
+
+      <label for="collection-offers" class="small" style="margin-top:.5rem;">Active Offers</label>
+      <select id="collection-offers" size="8"></select>
+
+      <label for="fulfil-token-id" class="small" style="margin-top:.5rem;">Token ID to sell into selected offer</label>
+      <input id="fulfil-token-id" type="number" min="0" placeholder="Your NFT tokenId"/>
+
+      <button class="action" id="btn-fulfil-offer">Fulfil Offer</button>
+
+      <div class="info small" id="collection-offers-status"></div>
+    </div>
+
+    <!-- My Offers -->
+    <div class="box">
+      <h1>My Offers</h1>
+
+      <button class="action" id="btn-load-my-offers">Load My Active Offers</button>
+
+      <label for="my-offers" class="small" style="margin-top:.5rem;">My Active Offers</label>
+      <select id="my-offers" size="8"></select>
+
+      <button class="action" id="btn-cancel-offer">Cancel Selected Offer</button>
+
+      <label for="withdraw-offer-id" class="small" style="margin-top:.75rem;">Offer ID to withdraw NFT (fulfilled)</label>
+      <input id="withdraw-offer-id" type="number" min="0" placeholder="Offer ID with fulfilled status"/>
+
+      <button class="action" id="btn-withdraw-nft">Withdraw NFT</button>
+
+      <div class="info small" id="my-offers-status"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.esm.min.js';
+
+    const ESCROW_ADDRESS = "0x6895688Cf49B49f6678a29E9304f5e20F472E629";
+
+    const REQUIRED_CHAIN_ID = 14601;
+    const SONIC_CHAIN_ID_HEX = '0x3909';
+    const SONIC_RPC = 'https://rpc.testnet.soniclabs.com';
+
+    const ESCROW_ABI = [
+      "function minFee() view returns (uint256)",
+      "function feeBps() view returns (uint256)",
+      "function calculateFee(uint256 amount) view returns (uint256)",
+      "function createOffer(address nftContract,uint256 amount,uint64 expirySeconds) payable",
+      "function cancelOffer(uint256 offerId)",
+      "function fulfilOffer(uint256 offerId,uint256 tokenId)",
+      "function withdrawNFT(uint256 offerId)",
+      "function getActiveOffersByCollection(address nftContract) view returns (uint256[])",
+      "function getActiveOffersByBuyer(address buyer) view returns (uint256[])",
+      "function getOffer(uint256 offerId) view returns (tuple(address buyer,address seller,uint256 amount,address nftContract,uint256 tokenId,uint256 fee,uint256 totalPaid,uint8 status,uint64 createdAt,uint64 fulfilledAt,uint64 cancelledAt,uint64 withdrawnAt,uint64 expiry))",
+      "function getUserStats(address buyer) view returns (uint256 totalOffers,uint256 activeOffers,uint256 fulfilledOffers,uint256 cancelledOffers)"
+    ];
+
+    const ERC721_ABI = [
+      "function ownerOf(uint256) view returns (address)",
+      "function getApproved(uint256) view returns (address)",
+      "function isApprovedForAll(address,address) view returns (bool)",
+      "function setApprovalForAll(address,bool)"
+    ];
+
+    const SONIC_PARAMS = [{
+      chainId: SONIC_CHAIN_ID_HEX,
+      chainName: 'Sonic Testnet',
+      nativeCurrency: { name: 'S', symbol: 'S', decimals: 18 },
+      rpcUrls: [SONIC_RPC],
+      blockExplorerUrls: ['https://testnet.sonicscan.org']
+    }];
+
+    let provider, signer, account;
+    let escrowRead, escrowWrite;
+
+    const el = id => document.getElementById(id);
+
+    async function rpcReportsCorrectChain() {
+      try {
+        const resp = await fetch(SONIC_RPC, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] })
+        });
+        const data = await resp.json();
+        const ok = parseInt(data.result, 16) === REQUIRED_CHAIN_ID;
+        el('rpc-status').textContent = ok ? 'OK' : 'Mismatch';
+        return ok;
+      } catch {
+        el('rpc-status').textContent = 'Error';
+        return false;
+      }
+    }
+
+    async function trySwitchOrAdd() {
+      if (!window.ethereum) return false;
+
+      const rpcOk = await rpcReportsCorrectChain();
+      if (!rpcOk) return false;
+
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: SONIC_CHAIN_ID_HEX }]
+        });
+        return true;
+      } catch (err) {
+        if (err.code === 4902) {
+          try {
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: SONIC_PARAMS
+            });
+            return true;
+          } catch {
+            return false;
+          }
+        }
+        return false;
+      }
+    }
+
+    async function connectWallet() {
+      if (!window.ethereum) {
+        alert('Please install a Web3 wallet');
+        return;
+      }
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        await handleAccountsChanged(accounts);
+      } catch {
+        el('wallet-status').textContent = 'Rejected';
+      }
+    }
+
+    async function handleAccountsChanged(accounts) {
+      if (!accounts || !accounts.length) {
+        el('wallet-status').textContent = 'Disconnected';
+        return;
+      }
+
+      provider = new ethers.providers.Web3Provider(window.ethereum, 'any');
+      signer = provider.getSigner();
+      account = await signer.getAddress();
+
+      let net = await provider.getNetwork();
+      if (net.chainId !== REQUIRED_CHAIN_ID) {
+        const ok = await trySwitchOrAdd();
+        if (!ok) {
+          el('wallet-status').textContent = 'Wrong network';
+          return;
+        }
+        net = await provider.getNetwork();
+        if (net.chainId !== REQUIRED_CHAIN_ID) {
+          el('wallet-status').textContent = 'Wrong network';
+          return;
+        }
+      }
+
+      escrowWrite = new ethers.Contract(ESCROW_ADDRESS, ESCROW_ABI, signer);
+      escrowRead  = new ethers.Contract(ESCROW_ADDRESS, ESCROW_ABI, provider);
+
+      el('wallet-button').textContent = '…' + account.slice(-4);
+      el('wallet-status').textContent = 'Connected';
+
+      await refreshUserStats();
+    }
+
+    async function refreshUserStats() {
+      if (!escrowRead || !account) return;
+      try {
+        const [total, active, fulfilled, cancelled] = await escrowRead.getUserStats(account);
+        el('user-offer-stats').textContent =
+          `total ${total.toString()} | active ${active.toString()} | filled ${fulfilled.toString()} | cancelled ${cancelled.toString()}`;
+      } catch {
+        el('user-offer-stats').textContent = '–';
+      }
+    }
+
+    async function previewFee() {
+      if (!escrowRead) {
+        el('offer-fee-preview').textContent = 'Connect wallet first';
+        return;
+      }
+      const amountStr = el('offer-amount').value.trim();
+      if (!amountStr || Number(amountStr) <= 0) {
+        el('offer-fee-preview').textContent = 'Enter a valid amount';
+        return;
+      }
+      try {
+        const amountWei = ethers.utils.parseEther(amountStr);
+        const feeWei = await escrowRead.calculateFee(amountWei);
+        const totalWei = amountWei.add(feeWei);
+        el('offer-fee-preview').textContent =
+          `Fee: ${ethers.utils.formatEther(feeWei)} S | Total to send: ${ethers.utils.formatEther(totalWei)} S`;
+      } catch (e) {
+        el('offer-fee-preview').textContent = e.message || 'Fee preview failed';
+      }
+    }
+
+    async function createOffer() {
+      if (!escrowWrite || !account) {
+        el('offer-status').textContent = 'Connect wallet first';
+        return;
+      }
+      const nft = el('offer-collection').value.trim();
+      const amountStr = el('offer-amount').value.trim();
+      const expiryStr = el('offer-expiry').value.trim() || '0';
+
+      if (!ethers.utils.isAddress(nft)) {
+        el('offer-status').textContent = 'Invalid collection address';
+        return;
+      }
+      if (!amountStr || Number(amountStr) <= 0) {
+        el('offer-status').textContent = 'Amount must be > 0';
+        return;
+      }
+
+      try {
+        const amountWei = ethers.utils.parseEther(amountStr);
+        const feeWei = await escrowRead.calculateFee(amountWei);
+        const totalWei = amountWei.add(feeWei);
+
+        el('offer-status').textContent = 'Sending transaction…';
+
+        const tx = await escrowWrite.createOffer(
+          nft,
+          amountWei,
+          BigInt(expiryStr),
+          { value: totalWei }
+        );
+        await tx.wait();
+
+        el('offer-status').textContent = 'Offer created';
+        await refreshUserStats();
+      } catch (e) {
+        el('offer-status').textContent = e.message || 'Create failed';
+      }
+    }
+
+    async function loadCollectionOffers() {
+      if (!escrowRead) {
+        el('collection-offers-status').textContent = 'Connect wallet first';
+        return;
+      }
+      const nft = el('browse-collection').value.trim();
+      if (!ethers.utils.isAddress(nft)) {
+        el('collection-offers-status').textContent = 'Invalid collection address';
+        return;
+      }
+      el('collection-offers-status').textContent = 'Loading…';
+      const sel = el('collection-offers');
+      sel.innerHTML = '';
+      try {
+        const ids = await escrowRead.getActiveOffersByCollection(nft);
+        if (!ids.length) {
+          el('collection-offers-status').textContent = 'No active offers';
+          return;
+        }
+        for (const id of ids) {
+          const offer = await escrowRead.getOffer(id);
+          const opt = document.createElement('option');
+          opt.value = id.toString();
+          const amount = ethers.utils.formatEther(offer.amount);
+          const expiry = offer.expiry.toString() === '0'
+            ? 'no expiry'
+            : new Date(Number(offer.expiry) * 1000).toLocaleString();
+          opt.textContent = `#${id} — ${amount} S — expiry: ${expiry}`;
+          sel.appendChild(opt);
+        }
+        el('collection-offers-status').textContent = `Loaded ${ids.length} offers`;
+      } catch (e) {
+        el('collection-offers-status').textContent = e.message || 'Load failed';
+      }
+    }
+
+    async function fulfilOffer() {
+      if (!escrowWrite || !account) {
+        el('collection-offers-status').textContent = 'Connect wallet first';
+        return;
+      }
+      const sel = el('collection-offers');
+      const offerId = sel.value;
+      const tokenIdStr = el('fulfil-token-id').value.trim();
+
+      if (!offerId) {
+        el('collection-offers-status').textContent = 'Select an offer';
+        return;
+      }
+      if (!tokenIdStr) {
+        el('collection-offers-status').textContent = 'Enter tokenId';
+        return;
+      }
+
+      try {
+        el('collection-offers-status').textContent = 'Sending fulfil transaction…';
+        const tx = await escrowWrite.fulfilOffer(offerId, tokenIdStr);
+        await tx.wait();
+        el('collection-offers-status').textContent = 'Offer fulfilled';
+        await refreshUserStats();
+        await loadCollectionOffers();
+      } catch (e) {
+        el('collection-offers-status').textContent = e.message || 'Fulfil failed';
+      }
+    }
+
+    async function loadMyOffers() {
+      if (!escrowRead || !account) {
+        el('my-offers-status').textContent = 'Connect wallet first';
+        return;
+      }
+      el('my-offers-status').textContent = 'Loading…';
+      const sel = el('my-offers');
+      sel.innerHTML = '';
+      try {
+        const ids = await escrowRead.getActiveOffersByBuyer(account);
+        if (!ids.length) {
+          el('my-offers-status').textContent = 'No active offers';
+          return;
+        }
+        for (const id of ids) {
+          const offer = await escrowRead.getOffer(id);
+          const opt = document.createElement('option');
+          opt.value = id.toString();
+          const amount = ethers.utils.formatEther(offer.amount);
+          const expiry = offer.expiry.toString() === '0'
+            ? 'no expiry'
+            : new Date(Number(offer.expiry) * 1000).toLocaleString();
+          opt.textContent = `#${id} — ${amount} S — expiry: ${expiry}`;
+          sel.appendChild(opt);
+        }
+        el('my-offers-status').textContent = `Loaded ${ids.length} offers`;
+      } catch (e) {
+        el('my-offers-status').textContent = e.message || 'Load failed';
+      }
+    }
+
+    async function cancelOffer() {
+      if (!escrowWrite || !account) {
+        el('my-offers-status').textContent = 'Connect wallet first';
+        return;
+      }
+      const sel = el('my-offers');
+      const offerId = sel.value;
+      if (!offerId) {
+        el('my-offers-status').textContent = 'Select an offer';
+        return;
+      }
+      try {
+        el('my-offers-status').textContent = 'Cancelling…';
+        const tx = await escrowWrite.cancelOffer(offerId);
+        await tx.wait();
+        el('my-offers-status').textContent = 'Offer cancelled';
+        await refreshUserStats();
+        await loadMyOffers();
+      } catch (e) {
+        el('my-offers-status').textContent = e.message || 'Cancel failed';
+      }
+    }
+
+    async function withdrawNFT() {
+      if (!escrowWrite || !account) {
+        el('my-offers-status').textContent = 'Connect wallet first';
+        return;
+      }
+      const idStr = el('withdraw-offer-id').value.trim();
+      if (!idStr) {
+        el('my-offers-status').textContent = 'Enter offer ID';
+        return;
+      }
+      try {
+        el('my-offers-status').textContent = 'Withdrawing NFT…';
+        const tx = await escrowWrite.withdrawNFT(idStr);
+        await tx.wait();
+        el('my-offers-status').textContent = 'NFT withdrawn';
+        await refreshUserStats();
+      } catch (e) {
+        el('my-offers-status').textContent = e.message || 'Withdraw failed';
+      }
+    }
+
+    el('wallet-button').onclick = connectWallet;
+    el('btn-preview-fee').onclick = previewFee;
+    el('btn-create-offer').onclick = createOffer;
+    el('btn-load-collection-offers').onclick = loadCollectionOffers;
+    el('btn-fulfil-offer').onclick = fulfilOffer;
+    el('btn-load-my-offers').onclick = loadMyOffers;
+    el('btn-cancel-offer').onclick = cancelOffer;
+    el('btn-withdraw-nft').onclick = withdrawNFT;
+
+    window.addEventListener('load', async () => {
+      await rpcReportsCorrectChain();
+      const ticker = el('rolling-stats');
+      ticker.classList.add('running');
+    });
+  </script>
+</body>
+</html>
