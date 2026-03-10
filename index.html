@@ -212,6 +212,7 @@
 
       <div class="info" id="offer-status"></div>
     </div>
+
     <div class="box">
       <h1>Offers by Collection</h1>
       <label for="browse-collection">NFT Collection</label>
@@ -240,15 +241,14 @@
 
       <button class="action" id="btn-cancel-offer">Cancel Selected Offer</button>
 
-      <label for="withdraw-offer-id" class="small" style="margin-top:.75rem;">Offer ID to withdraw NFT (fulfilled)</label>
-      <input id="withdraw-offer-id" type="number" min="0" placeholder="Offer ID with fulfilled status"/>
+      <label for="withdraw-offer-id" class="small" style="margin-top:.75rem;">Fulfilled Offers (NFT Ready)</label>
+      <select id="withdraw-offer-id" size="5"></select>
 
       <button class="action" id="btn-withdraw-nft">Withdraw NFT</button>
 
       <div class="info small" id="my-offers-status"></div>
     </div>
   </div>
-
   <script type="module">
     import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.esm.min.js';
 
@@ -268,6 +268,7 @@
       "function withdrawNFT(uint256 offerId)",
       "function getActiveOffersByCollection(address nftContract) view returns (uint256[])",
       "function getActiveOffersByBuyer(address buyer) view returns (uint256[])",
+      "function getOffersByBuyer(address buyer) view returns (uint256[])",
       "function getOffer(uint256 offerId) view returns (tuple(address buyer,address seller,uint256 amount,address nftContract,uint256 tokenId,uint256 fee,uint256 totalPaid,uint8 status,uint64 createdAt,uint64 fulfilledAt,uint64 cancelledAt,uint64 withdrawnAt,uint64 expiry))",
       "function getUserStats(address buyer) view returns (uint256 totalOffers,uint256 activeOffers,uint256 fulfilledOffers,uint256 cancelledOffers)"
     ];
@@ -382,6 +383,7 @@
       el('wallet-status').textContent = 'Connected';
 
       await refreshUserStats();
+      await loadFulfilledOffers();   <!-- NEW -->
     }
 
     async function refreshUserStats() {
@@ -439,7 +441,6 @@
         const feeWei = await escrowRead.calculateFee(amountWei);
         const totalWei = amountWei.add(feeWei);
 
-        // Convert hours → seconds
         const hours = Number(expiryStr);
         const expirySeconds = BigInt(hours * 3600);
 
@@ -495,8 +496,38 @@
         el('collection-offers-status').textContent = e.message || 'Load failed';
       }
     }
+    // Load fulfilled offers into dropdown
+    async function loadFulfilledOffers() {
+      if (!escrowRead || !account) return;
 
-    // ✔ CLEAN, FIXED APPROVAL LOGIC
+      const sel = el('withdraw-offer-id');
+      sel.innerHTML = '';
+
+      try {
+        const all = await escrowRead.getOffersByBuyer(account);
+
+        for (const id of all) {
+          const offer = await escrowRead.getOffer(id);
+          if (offer.status === 2) { // Status.Fulfilled
+            const opt = document.createElement('option');
+            opt.value = id.toString();
+            opt.textContent = `Offer #${id} — NFT ready to withdraw`;
+            sel.appendChild(opt);
+          }
+        }
+
+        if (!sel.children.length) {
+          const opt = document.createElement('option');
+          opt.disabled = true;
+          opt.textContent = "No fulfilled offers";
+          sel.appendChild(opt);
+        }
+      } catch (e) {
+        console.error("loadFulfilledOffers error:", e);
+      }
+    }
+
+    // Clean, fixed approval logic for fulfilOffer
     async function fulfilOffer() {
       if (!escrowWrite || !account) {
         el('collection-offers-status').textContent = 'Connect wallet first';
@@ -517,13 +548,11 @@
       }
 
       try {
-        // Fetch offer to get NFT contract address
         const offer = await escrowRead.getOffer(offerId);
         const nftAddress = offer.nftContract;
 
         const nft = new ethers.Contract(nftAddress, ERC721_ABI, signer);
 
-        // Check approval
         const approved = await nft.getApproved(tokenIdStr);
         const isAll = await nft.isApprovedForAll(account, ESCROW_ADDRESS);
 
@@ -538,8 +567,11 @@
         await tx.wait();
 
         el('collection-offers-status').textContent = 'Offer fulfilled';
+
         await refreshUserStats();
         await loadCollectionOffers();
+        await loadFulfilledOffers();
+
       } catch (e) {
         el('collection-offers-status').textContent = e.message || 'Fulfil failed';
       }
@@ -594,27 +626,37 @@
         el('my-offers-status').textContent = 'Offer cancelled';
         await refreshUserStats();
         await loadMyOffers();
+        await loadFulfilledOffers();
       } catch (e) {
         el('my-offers-status').textContent = e.message || 'Cancel failed';
       }
     }
 
+    // Updated withdrawNFT using dropdown
     async function withdrawNFT() {
       if (!escrowWrite || !account) {
         el('my-offers-status').textContent = 'Connect wallet first';
         return;
       }
-      const idStr = el('withdraw-offer-id').value.trim();
-      if (!idStr) {
-        el('my-offers-status').textContent = 'Enter offer ID';
+
+      const sel = el('withdraw-offer-id');
+      const offerId = sel.value;
+
+      if (!offerId) {
+        el('my-offers-status').textContent = 'Select a fulfilled offer';
         return;
       }
+
       try {
         el('my-offers-status').textContent = 'Withdrawing NFT…';
-        const tx = await escrowWrite.withdrawNFT(idStr);
+        const tx = await escrowWrite.withdrawNFT(offerId);
         await tx.wait();
+
         el('my-offers-status').textContent = 'NFT withdrawn';
+
         await refreshUserStats();
+        await loadFulfilledOffers();
+
       } catch (e) {
         el('my-offers-status').textContent = e.message || 'Withdraw failed';
       }
