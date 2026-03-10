@@ -310,6 +310,7 @@
     const el = id => document.getElementById(id);
 
 async function loadPreviewImage() {
+  console.log("loadPreviewImage triggered");
   const addr = el('browse-collection').value.trim();
   if (!ethers.utils.isAddress(addr)) {
     el('nft-preview').style.display = 'none';
