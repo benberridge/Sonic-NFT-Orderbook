@@ -174,15 +174,6 @@
       opacity: 0.8;
     }
 
-    .row-buttons {
-      display: flex;
-      gap: .5rem;
-      margin-top: .25rem;
-    }
-    .row-buttons button {
-      flex: 1;
-    }
-
     @media (max-width: 600px) {
       .ticker { animation-duration: 52s; font-size: 0.85rem; }
       body { padding-top: calc(var(--banner-h) + 12px); }
@@ -203,7 +194,6 @@
   <button id="wallet-button">Connect Wallet</button>
 
   <div class="lower-section">
-    <!-- Create Offer -->
     <div class="box">
       <h1>Create Offer</h1>
       <label for="offer-collection">NFT Collection</label>
@@ -212,8 +202,8 @@
       <label for="offer-amount">Offer Amount (S)</label>
       <input id="offer-amount" type="number" min="0" step="0.0001" placeholder="Amount in S"/>
 
-      <label for="offer-expiry">Expiry (seconds, 0 = no expiry)</label>
-      <input id="offer-expiry" type="number" min="0" step="1" placeholder="e.g. 86400 for 1 day"/>
+      <label for="offer-expiry">Expiry (hours, 0 = no expiry)</label>
+      <input id="offer-expiry" type="number" min="0" step="1" placeholder="e.g. 24 for 1 day"/>
 
       <div class="info small" id="offer-fee-preview">Fee: – | Total to send: –</div>
 
@@ -222,8 +212,6 @@
 
       <div class="info" id="offer-status"></div>
     </div>
-
-    <!-- Browse Offers by Collection -->
     <div class="box">
       <h1>Offers by Collection</h1>
       <label for="browse-collection">NFT Collection</label>
@@ -242,7 +230,6 @@
       <div class="info small" id="collection-offers-status"></div>
     </div>
 
-    <!-- My Offers -->
     <div class="box">
       <h1>My Offers</h1>
 
@@ -289,6 +276,7 @@
       "function ownerOf(uint256) view returns (address)",
       "function getApproved(uint256) view returns (address)",
       "function isApprovedForAll(address,address) view returns (bool)",
+      "function approve(address,uint256)",
       "function setApprovalForAll(address,bool)"
     ];
 
@@ -451,12 +439,16 @@
         const feeWei = await escrowRead.calculateFee(amountWei);
         const totalWei = amountWei.add(feeWei);
 
+        // Convert hours → seconds
+        const hours = Number(expiryStr);
+        const expirySeconds = BigInt(hours * 3600);
+
         el('offer-status').textContent = 'Sending transaction…';
 
         const tx = await escrowWrite.createOffer(
           nft,
           amountWei,
-          BigInt(expiryStr),
+          expirySeconds,
           { value: totalWei }
         );
         await tx.wait();
@@ -504,11 +496,13 @@
       }
     }
 
+    // ✔ CLEAN, FIXED APPROVAL LOGIC
     async function fulfilOffer() {
       if (!escrowWrite || !account) {
         el('collection-offers-status').textContent = 'Connect wallet first';
         return;
       }
+
       const sel = el('collection-offers');
       const offerId = sel.value;
       const tokenIdStr = el('fulfil-token-id').value.trim();
@@ -523,9 +517,26 @@
       }
 
       try {
+        // Fetch offer to get NFT contract address
+        const offer = await escrowRead.getOffer(offerId);
+        const nftAddress = offer.nftContract;
+
+        const nft = new ethers.Contract(nftAddress, ERC721_ABI, signer);
+
+        // Check approval
+        const approved = await nft.getApproved(tokenIdStr);
+        const isAll = await nft.isApprovedForAll(account, ESCROW_ADDRESS);
+
+        if (approved !== ESCROW_ADDRESS && !isAll) {
+          el('collection-offers-status').textContent = 'Requesting approval…';
+          const txA = await nft.approve(ESCROW_ADDRESS, tokenIdStr);
+          await txA.wait();
+        }
+
         el('collection-offers-status').textContent = 'Sending fulfil transaction…';
         const tx = await escrowWrite.fulfilOffer(offerId, tokenIdStr);
         await tx.wait();
+
         el('collection-offers-status').textContent = 'Offer fulfilled';
         await refreshUserStats();
         await loadCollectionOffers();
@@ -609,6 +620,7 @@
       }
     }
 
+    // Bind UI
     el('wallet-button').onclick = connectWallet;
     el('btn-preview-fee').onclick = previewFee;
     el('btn-create-offer').onclick = createOffer;
