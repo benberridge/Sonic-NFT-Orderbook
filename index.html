@@ -221,6 +221,10 @@
 
       <button class="action" id="btn-load-collection-offers">Load Active Offers</button>
 
+      <div class="info" style="margin-top:1rem;">
+      <img id="nft-preview" style="max-width:100%; border-radius:12px; display:none;" />
+      </div>
+
       <label for="collection-offers" class="small" style="margin-top:.5rem;">Active Offers</label>
       <select id="collection-offers" size="8"></select>
 
@@ -287,7 +291,9 @@
       "function getApproved(uint256) view returns (address)",
       "function isApprovedForAll(address,address) view returns (bool)",
       "function approve(address,uint256)",
-      "function setApprovalForAll(address,bool)"
+      "function setApprovalForAll(address,bool)",
+      "function tokenURI(uint256) view returns (string)"
+
     ];
 
     const SONIC_PARAMS = [{
@@ -302,6 +308,43 @@
     let escrowRead, escrowWrite;
 
     const el = id => document.getElementById(id);
+
+async function loadPreviewImage() {
+  const addr = el('browse-collection').value.trim();
+  if (!ethers.utils.isAddress(addr)) {
+    el('nft-preview').style.display = 'none';
+    return;
+  }
+
+  try {
+    const nft = new ethers.Contract(
+      addr,
+      ERC721_ABI,
+      provider || new ethers.providers.JsonRpcProvider(SONIC_RPC)
+    );
+
+    let uri = await nft.tokenURI(1);
+
+    if (uri.startsWith("ipfs://")) {
+      uri = "https://ipfs.io/ipfs/" + uri.replace("ipfs://", "");
+    }
+
+    const meta = await fetch(uri).then(r => r.json());
+    let img = meta.image;
+
+    if (img.startsWith("ipfs://")) {
+      img = "https://ipfs.io/ipfs/" + img.replace("ipfs://", "");
+    }
+
+    const imgEl = el('nft-preview');
+    imgEl.src = img;
+    imgEl.style.display = 'block';
+
+  } catch (err) {
+    console.error("Preview load failed:", err);
+    el('nft-preview').style.display = 'none';
+  }
+}
 
     async function rpcReportsCorrectChain() {
       try {
@@ -678,6 +721,7 @@
     el('btn-load-my-offers').onclick = loadMyOffers;
     el('btn-cancel-offer').onclick = cancelOffer;
     el('btn-withdraw-nft').onclick = withdrawNFT;
+    el('browse-collection').addEventListener('input', loadPreviewImage);
 
     window.addEventListener('load', async () => {
       await rpcReportsCorrectChain();
