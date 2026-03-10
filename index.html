@@ -510,7 +510,7 @@
 
         for (const id of all) {
           const offer = await escrowRead.getOffer(id);
-          if (offer.status === 2) { // Status.Fulfilled
+          if (offer.status === 3) { // Status.Fulfilled
             const opt = document.createElement('option');
             opt.value = id.toString();
             opt.textContent = `Offer #${id} — NFT ready to withdraw`;
