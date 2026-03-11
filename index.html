@@ -648,9 +648,16 @@ async function loadPreviewImage() {
           const opt = document.createElement('option');
           opt.value = id.toString();
           const amount = ethers.utils.formatEther(offer.amount);
-          const expiry = offer.expiry.toString() === '0'
-            ? 'no expiry'
-            : new Date(Number(offer.expiry) * 1000).toLocaleString();
+          let expiry;
+          if (offer.expiry.toString() === '0') {
+            expiry = 'no expiry';
+          } else {
+          const ts = Number(offer.expiry) * 1000;
+          const expired = Date.now() > ts;
+          expiry = expired
+              ? `expired (${new Date(ts).toLocaleString()})`
+              : new Date(ts).toLocaleString();
+          }
           opt.textContent = `#${id} — ${amount} S — expiry: ${expiry}`;
           sel.appendChild(opt);
         }
