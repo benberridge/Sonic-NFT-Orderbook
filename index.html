@@ -3,182 +3,105 @@
 <head>
   <meta charset="UTF-8"/>
   <meta http-equiv="Content-Security-Policy" content="
-      default-src 'self';
-      script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline';
-      style-src 'self' https://fonts.googleapis.com 'unsafe-inline';
-      connect-src 'self' https://rpc.testnet.soniclabs.com;
-      font-src 'self' https://fonts.gstatic.com;
-    "/>
+    default-src 'self';
+    script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline';
+    style-src 'self' https://fonts.googleapis.com 'unsafe-inline';
+    connect-src 'self' https://rpc.testnet.soniclabs.com;
+    font-src 'self' https://fonts.gstatic.com;
+  "/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>NFT Orderbook</title>
-
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet"/>
-
   <style>
-    :root {
-      --neon: #00ffe1;
-      --neon-dim: rgba(0,255,225,0.2);
-      --text-light: #e0e0e0;
-      --card-bg: rgba(255,255,255,0.05);
-      --radius: 16px;
-      --gap: 1.5rem;
-      --transition: 0.3s ease;
-      --banner-h: 48px;
+    :root{
+      --neon:#00ffe1;
+      --neon-dim:rgba(0,255,225,0.2);
+      --text-light:#e0e0e0;
+      --card-bg:rgba(255,255,255,0.05);
+      --radius:16px;
+      --gap:1.5rem;
+      --transition:0.3s ease;
+      --banner-h:48px;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: radial-gradient(circle at center,#1a1a3d,#0a0a1f);
-      color: var(--text-light);
-      font-family: 'Roboto', sans-serif;
-      padding: calc(var(--gap) + var(--banner-h)) var(--gap) var(--gap);
-      line-height: 1.4;
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{
+      background:radial-gradient(circle at center,#1a1a3d,#0a0a1f);
+      color:var(--text-light);
+      font-family:'Roboto',sans-serif;
+      padding:calc(var(--gap) + var(--banner-h)) var(--gap) var(--gap);
+      line-height:1.4;
     }
-
-    .top-banner {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      height: var(--banner-h);
-      background: linear-gradient(90deg, rgba(0,0,0,0.45), rgba(0,0,0,0.25));
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-      display: flex;
-      align-items: center;
-      overflow: hidden;
-      z-index: 1000;
-      padding: 0 1rem;
-      backdrop-filter: blur(6px);
+    .top-banner{
+      position:fixed;top:0;left:0;right:0;height:var(--banner-h);
+      background:linear-gradient(90deg, rgba(0,0,0,0.45), rgba(0,0,0,0.25));
+      border-bottom:1px solid rgba(255,255,255,0.06);
+      display:flex;align-items:center;overflow:hidden;z-index:1000;padding:0 1rem;
+      backdrop-filter:blur(6px);
     }
-    .ticker {
-      display: inline-block;
-      white-space: nowrap;
-      will-change: transform;
-      transform: translateX(100%);
-      animation: scroll-left 36s linear infinite;
-      animation-play-state: paused;
-      font-weight: 500;
-      color: var(--text-light);
-      font-size: 0.95rem;
+    .ticker{
+      display:inline-block;white-space:nowrap;will-change:transform;transform:translateX(100%);
+      animation:scroll-left 36s linear infinite;animation-play-state:paused;
+      font-weight:500;color:var(--text-light);font-size:0.95rem;
     }
-    .ticker.running { animation-play-state: running; }
-    @keyframes scroll-left {
-      0% { transform: translateX(100%); }
-      100% { transform: translateX(-100%); }
+    .ticker.running{animation-play-state:running}
+    @keyframes scroll-left{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}
+    .stat-pill{
+      display:inline-block;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.04);
+      padding:6px 12px;margin-right:12px;border-radius:999px;color:var(--neon);
+      box-shadow:0 0 4px rgba(0,255,225,0.04);
     }
-    .stat-pill {
-      display: inline-block;
-      background: rgba(0,0,0,0.2);
-      border: 1px solid rgba(255,255,255,0.04);
-      padding: 6px 12px;
-      margin-right: 12px;
-      border-radius: 999px;
-      color: var(--neon);
-      box-shadow: 0 0 4px rgba(0,255,225,0.04);
+    .brand{ text-align:center;font-size:2.3rem;font-weight:700;color:var(--neon);margin-bottom:var(--gap);letter-spacing:2px }
+    #wallet-button{
+      position:fixed;top:calc(var(--banner-h) + 8px);right:var(--gap);
+      padding:.6rem 1.2rem;border:2px solid var(--neon);background:transparent;color:var(--neon);
+      border-radius:var(--radius);font-weight:500;cursor:pointer;transition:background var(--transition), color var(--transition);z-index:1101;
     }
-
-    .brand {
-      text-align: center;
-      font-size: 2.3rem;
-      font-weight: 700;
-      color: var(--neon);
-      margin-bottom: var(--gap);
-      letter-spacing: 2px;
+    #wallet-button:hover{background:var(--neon-dim);color:#fff}
+    .lower-section{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:var(--gap)}
+    .box{
+      background:var(--card-bg);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);
+      border-radius:var(--radius);padding:var(--gap);display:flex;flex-direction:column;
+      transition:transform var(--transition), box-shadow var(--transition);
     }
-
-    #wallet-button {
-      position: fixed;
-      top: calc(var(--banner-h) + 8px);
-      right: var(--gap);
-      padding: .6rem 1.2rem;
-      border: 2px solid var(--neon);
-      background: transparent;
-      color: var(--neon);
-      border-radius: var(--radius);
-      font-weight: 500;
-      cursor: pointer;
-      transition: background var(--transition), color var(--transition);
-      z-index: 1101;
+    .box:hover{transform:translateY(-6px);box-shadow:0 4px 32px rgba(0,0,0,0.6)}
+    h1{font-size:1.5rem;font-weight:700;color:var(--neon);text-align:center;margin-bottom:1rem}
+    label{font-weight:500;margin-bottom:.35rem;color:var(--text-light);display:block}
+    input,select{
+      width:100%;padding:.55rem .6rem;margin-bottom:.75rem;border:1px solid rgba(255,255,255,0.2);
+      border-radius:8px;background:rgba(255,255,255,0.03);color:var(--text-light);font-size:0.95rem;transition:border var(--transition)
     }
-    #wallet-button:hover { background: var(--neon-dim); color: #fff; }
-
-    .lower-section {
-      display: grid;
-      grid-template-columns: repeat(auto-fit,minmax(320px,1fr));
-      gap: var(--gap);
+    input:focus,select:focus{outline:none;border-color:var(--neon)}
+    button.action{
+      padding:.6rem .9rem;border:2px solid var(--neon);background:transparent;color:var(--neon);
+      border-radius:8px;font-weight:500;cursor:pointer;transition:background var(--transition), color var(--transition);
+      margin-top:.25rem;width:100%;
     }
-    .box {
-      background: var(--card-bg);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: var(--radius);
-      padding: var(--gap);
-      display: flex;
-      flex-direction: column;
-      transition: transform var(--transition), box-shadow var(--transition);
-    }
-    .box:hover {
-      transform: translateY(-6px);
-      box-shadow: 0 4px 32px rgba(0,0,0,0.6);
+    button.action:hover{background:var(--neon-dim);color:#fff}
+    .info{text-align:center;margin:.5rem 0;font-size:.9rem}
+    .small{font-size:0.8rem;opacity:0.8}
+    @media (max-width:600px){
+      .ticker{animation-duration:52s;font-size:0.85rem}
+      body{padding-top:calc(var(--banner-h) + 12px)}
     }
 
-    h1 {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: var(--neon);
-      text-align: center;
-      margin-bottom: 1rem;
+    /* ===================== ADDED: Minimal modal styles (namespaced) ===================== */
+    .wl-backdrop{
+      position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:2000;
     }
-
-    label {
-      font-weight: 500;
-      margin-bottom: .35rem;
-      color: var(--text-light);
-      display: block;
+    .wl-backdrop.open{display:flex}
+    .wl-modal{
+      width:min(720px,94vw);max-height:88vh;overflow:auto;background:#0e1422;color:inherit;
+      border:1px solid rgba(255,255,255,0.12);border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.45)
     }
-
-    input, select {
-      width: 100%;
-      padding: .55rem .6rem;
-      margin-bottom: .75rem;
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 8px;
-      background: rgba(255,255,255,0.03);
-      color: var(--text-light);
-      font-size: 0.95rem;
-      transition: border var(--transition);
+    .wl-modal header,.wl-modal .wl-footer{
+      padding:.75rem 1rem;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.12)
     }
-    input:focus, select:focus { outline: none; border-color: var(--neon); }
-
-    button.action {
-      padding: .6rem .9rem;
-      border: 2px solid var(--neon);
-      background: transparent;
-      color: var(--neon);
-      border-radius: 8px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background var(--transition), color var(--transition);
-      margin-top: .25rem;
-      width: 100%;
-    }
-    button.action:hover { background: var(--neon-dim); color: #fff; }
-
-    .info {
-      text-align: center;
-      margin: .5rem 0;
-      font-size: .9rem;
-    }
-
-    .small {
-      font-size: 0.8rem;
-      opacity: 0.8;
-    }
-
-    @media (max-width: 600px) {
-      .ticker { animation-duration: 52s; font-size: 0.85rem; }
-      body { padding-top: calc(var(--banner-h) + 12px); }
-    }
+    .wl-modal .wl-footer{border-top:1px solid rgba(255,255,255,0.12);border-bottom:none}
+    .wl-modal .wl-content{padding:1rem}
+    .wl-x{background:transparent;border:none;color:inherit;font-size:1.25rem;cursor:pointer}
+    /* ================================================================================ */
   </style>
 </head>
-
 <body>
   <div class="top-banner">
     <div class="ticker" id="rolling-stats">
@@ -188,7 +111,6 @@
       <span class="stat-pill">My offers: <span id="user-offer-stats">–</span></span>
     </div>
   </div>
-
   <div class="brand">NFT Orderbook</div>
   <button id="wallet-button">Connect Wallet</button>
 
@@ -196,59 +118,47 @@
     <div class="box">
       <h1>Create Offer</h1>
       <label for="offer-collection">NFT Collection</label>
-      <input id="offer-collection" placeholder="0x... (ERC721 collection)"/>
-
+      <input id="offer-collection" placeholder="0x... (NFT collection)"/>
       <label for="offer-amount">Offer Amount (S)</label>
       <input id="offer-amount" type="number" min="0" step="0.0001" placeholder="Amount in S"/>
-
       <label for="offer-expiry">Expiry (hours, 0 = no expiry)</label>
       <input id="offer-expiry" type="number" min="0" step="1" placeholder="e.g. 24 for 1 day"/>
-
-      <div class="info small" id="offer-fee-preview">Fee: – | Total to send: –</div>
-
+      <div class="info small" id="offer-fee-preview">Fee: –  Total to send: –</div>
       <button class="action" id="btn-preview-fee">Preview Fee</button>
       <button class="action" id="btn-create-offer">Create Offer</button>
-
       <div class="info" id="offer-status"></div>
     </div>
 
     <div class="box">
       <h1>Offers by Collection</h1>
+
+      <!-- ================= ADDED: Popup button (just above 'NFT Collection') ================= -->
+      <button class="action" id="btn-open-whitelist">View Whitelisted NFTs</button>
+      <!-- ================================================================================ -->
+
       <label for="browse-collection">NFT Collection</label>
-      <input id="browse-collection" placeholder="0x... (ERC721 collection)"/>
-
+      <input id="browse-collection" placeholder="0x... (NFT collection)"/>
       <button class="action" id="btn-load-collection-offers">Load Active Offers</button>
-
       <div class="info" style="margin-top:1rem;">
-      <img id="nft-preview" style="max-width:100%; border-radius:12px; display:none;" />
+        <img id="nft-preview" style="max-width:100%; border-radius:12px; display:none;" />
       </div>
-
       <label for="collection-offers" class="small" style="margin-top:.5rem;">Active Offers</label>
       <select id="collection-offers" size="8"></select>
-
       <label for="fulfil-token-id" class="small" style="margin-top:.5rem;">Token ID to sell into selected offer</label>
       <input id="fulfil-token-id" type="number" min="0" placeholder="Your NFT tokenId"/>
-
       <button class="action" id="btn-fulfil-offer">Fulfil Offer</button>
-
       <div class="info small" id="collection-offers-status"></div>
     </div>
 
     <div class="box">
       <h1>My Offers</h1>
-
       <button class="action" id="btn-load-my-offers">Load My Active Offers</button>
-
       <label for="my-offers" class="small" style="margin-top:.5rem;">My Active Offers</label>
       <select id="my-offers" size="8"></select>
-
       <button class="action" id="btn-cancel-offer">Cancel Selected Offer</button>
-
       <label for="withdraw-offer-id" class="small" style="margin-top:.75rem;">Fulfilled Offers (NFT Ready)</label>
       <select id="withdraw-offer-id" size="5"></select>
-
       <button class="action" id="btn-withdraw-nft">Withdraw NFT</button>
-
       <div class="info small" id="my-offers-status"></div>
     </div>
   </div>
@@ -264,7 +174,6 @@
     import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.esm.min.js';
 
     const ESCROW_ADDRESS = "0xD08bCA21e3Bf4E4bB4D96656669896EAbF7a43f7";
-
     const REQUIRED_CHAIN_ID = 14601;
     const SONIC_CHAIN_ID_HEX = '0x3909';
     const SONIC_RPC = 'https://rpc.testnet.soniclabs.com';
@@ -291,7 +200,6 @@
       "function approve(address,uint256)",
       "function setApprovalForAll(address,bool)",
       "function tokenURI(uint256) view returns (string)"
-
     ];
 
     const SONIC_PARAMS = [{
@@ -305,45 +213,37 @@
     let provider, signer, account;
     let escrowRead, escrowWrite;
 
-    const el = id => document.getElementById(id);
+    const el = (id) => document.getElementById(id);
 
-async function loadPreviewImage() {
-  console.log("loadPreviewImage triggered");
-  const addr = el('browse-collection').value.trim();
-  if (!ethers.utils.isAddress(addr)) {
-    el('nft-preview').style.display = 'none';
-    return;
-  }
-
-  try {
-    const nft = new ethers.Contract(
-      addr,
-      ERC721_ABI,
-      provider || new ethers.providers.JsonRpcProvider(SONIC_RPC)
-    );
-
-    let uri = await nft.tokenURI(1);
-
-    if (uri.startsWith("ipfs://")) {
-      uri = "https://ipfs.io/ipfs/" + uri.replace("ipfs://", "");
+    async function loadPreviewImage() {
+      const addr = el('browse-collection').value.trim();
+      if (!ethers.utils.isAddress(addr)) {
+        el('nft-preview').style.display = 'none';
+        return;
+      }
+      try {
+        const nft = new ethers.Contract(
+          addr,
+          ERC721_ABI,
+          provider || new ethers.providers.JsonRpcProvider(SONIC_RPC)
+        );
+        let uri = await nft.tokenURI(1);
+        if (uri.startsWith("ipfs://")) {
+          uri = "https://ipfs.io/ipfs/" + uri.replace("ipfs://", "");
+        }
+        const meta = await fetch(uri).then(r => r.json());
+        let img = meta.image || "";
+        if (img.startsWith("ipfs://")) {
+          img = "https://ipfs.io/ipfs/" + img.replace("ipfs://", "");
+        }
+        const imgEl = el('nft-preview');
+        imgEl.src = img;
+        imgEl.style.display = img ? 'block' : 'none';
+      } catch (err) {
+        console.error("Preview load failed:", err);
+        el('nft-preview').style.display = 'none';
+      }
     }
-
-    const meta = await fetch(uri).then(r => r.json());
-    let img = meta.image;
-
-    if (img.startsWith("ipfs://")) {
-      img = "https://ipfs.io/ipfs/" + img.replace("ipfs://", "");
-    }
-
-    const imgEl = el('nft-preview');
-    imgEl.src = img;
-    imgEl.style.display = 'block';
-
-  } catch (err) {
-    console.error("Preview load failed:", err);
-    el('nft-preview').style.display = 'none';
-  }
-}
 
     async function rpcReportsCorrectChain() {
       try {
@@ -364,10 +264,8 @@ async function loadPreviewImage() {
 
     async function trySwitchOrAdd() {
       if (!window.ethereum) return false;
-
       const rpcOk = await rpcReportsCorrectChain();
       if (!rpcOk) return false;
-
       try {
         await window.ethereum.request({
           method: 'wallet_switchEthereumChain',
@@ -408,7 +306,6 @@ async function loadPreviewImage() {
         el('wallet-status').textContent = 'Disconnected';
         return;
       }
-
       provider = new ethers.providers.Web3Provider(window.ethereum, 'any');
       signer = provider.getSigner();
       account = await signer.getAddress();
@@ -428,11 +325,10 @@ async function loadPreviewImage() {
       }
 
       escrowWrite = new ethers.Contract(ESCROW_ADDRESS, ESCROW_ABI, signer);
-      escrowRead  = new ethers.Contract(ESCROW_ADDRESS, ESCROW_ABI, provider);
+      escrowRead = new ethers.Contract(ESCROW_ADDRESS, ESCROW_ABI, provider);
 
       el('wallet-button').textContent = '…' + account.slice(-4);
       el('wallet-status').textContent = 'Connected';
-
       await refreshUserStats();
       await loadFulfilledOffers();
     }
@@ -442,7 +338,7 @@ async function loadPreviewImage() {
       try {
         const [total, active, fulfilled, cancelled] = await escrowRead.getUserStats(account);
         el('user-offer-stats').textContent =
-          `total ${total} | active ${active} | filled ${fulfilled} | cancelled ${cancelled}`;
+          `total ${total}  active ${active}  filled ${fulfilled}  cancelled ${cancelled}`;
       } catch {
         el('user-offer-stats').textContent = '–';
       }
@@ -463,7 +359,7 @@ async function loadPreviewImage() {
         const feeWei = await escrowRead.calculateFee(amountWei);
         const totalWei = amountWei.add(feeWei);
         el('offer-fee-preview').textContent =
-          `Fee: ${ethers.utils.formatEther(feeWei)} S | Total to send: ${ethers.utils.formatEther(totalWei)} S`;
+          `Fee: ${ethers.utils.formatEther(feeWei)} S  Total to send: ${ethers.utils.formatEther(totalWei)} S`;
       } catch (e) {
         el('offer-fee-preview').textContent = e.message || 'Fee preview failed';
       }
@@ -486,17 +382,14 @@ async function loadPreviewImage() {
         el('offer-status').textContent = 'Amount must be > 0';
         return;
       }
-
       try {
         const amountWei = ethers.utils.parseEther(amountStr);
         const feeWei = await escrowRead.calculateFee(amountWei);
         const totalWei = amountWei.add(feeWei);
-
         const hours = Number(expiryStr);
         const expirySeconds = BigInt(hours * 3600);
 
         el('offer-status').textContent = 'Sending transaction…';
-
         const tx = await escrowWrite.createOffer(
           nft,
           amountWei,
@@ -504,7 +397,6 @@ async function loadPreviewImage() {
           { value: totalWei }
         );
         await tx.wait();
-
         el('offer-status').textContent = 'Offer created';
         await refreshUserStats();
       } catch (e) {
@@ -550,13 +442,10 @@ async function loadPreviewImage() {
 
     async function loadFulfilledOffers() {
       if (!escrowRead || !account) return;
-
       const sel = el('withdraw-offer-id');
       sel.innerHTML = '';
-
       try {
         const all = await escrowRead.getOffersByBuyer(account);
-
         for (const id of all) {
           const offer = await escrowRead.getOffer(id);
           if (offer.status === 3) { // Status.Fulfilled
@@ -566,7 +455,6 @@ async function loadPreviewImage() {
             sel.appendChild(opt);
           }
         }
-
         if (!sel.children.length) {
           const opt = document.createElement('option');
           opt.disabled = true;
@@ -583,11 +471,9 @@ async function loadPreviewImage() {
         el('collection-offers-status').textContent = 'Connect wallet first';
         return;
       }
-
       const sel = el('collection-offers');
       const offerId = sel.value;
       const tokenIdStr = el('fulfil-token-id').value.trim();
-
       if (!offerId) {
         el('collection-offers-status').textContent = 'Select an offer';
         return;
@@ -596,32 +482,24 @@ async function loadPreviewImage() {
         el('collection-offers-status').textContent = 'Enter tokenId';
         return;
       }
-
       try {
         const offer = await escrowRead.getOffer(offerId);
         const nftAddress = offer.nftContract;
-
         const nft = new ethers.Contract(nftAddress, ERC721_ABI, signer);
-
         const approved = await nft.getApproved(tokenIdStr);
         const isAll = await nft.isApprovedForAll(account, ESCROW_ADDRESS);
-
         if (approved !== ESCROW_ADDRESS && !isAll) {
           el('collection-offers-status').textContent = 'Requesting approval…';
           const txA = await nft.approve(ESCROW_ADDRESS, tokenIdStr);
           await txA.wait();
         }
-
         el('collection-offers-status').textContent = 'Sending fulfil transaction…';
         const tx = await escrowWrite.fulfilOffer(offerId, tokenIdStr);
         await tx.wait();
-
         el('collection-offers-status').textContent = 'Offer fulfilled';
-
         await refreshUserStats();
         await loadCollectionOffers();
         await loadFulfilledOffers();
-
       } catch (e) {
         el('collection-offers-status').textContent = e.message || 'Fulfil failed';
       }
@@ -650,9 +528,9 @@ async function loadPreviewImage() {
           if (offer.expiry.toString() === '0') {
             expiry = 'no expiry';
           } else {
-          const ts = Number(offer.expiry) * 1000;
-          const expired = Date.now() > ts;
-          expiry = expired
+            const ts = Number(offer.expiry) * 1000;
+            const expired = Date.now() > ts;
+            expiry = expired
               ? `expired (${new Date(ts).toLocaleString()})`
               : new Date(ts).toLocaleString();
           }
@@ -694,25 +572,19 @@ async function loadPreviewImage() {
         el('my-offers-status').textContent = 'Connect wallet first';
         return;
       }
-
       const sel = el('withdraw-offer-id');
       const offerId = sel.value;
-
       if (!offerId) {
         el('my-offers-status').textContent = 'Select a fulfilled offer';
         return;
       }
-
       try {
         el('my-offers-status').textContent = 'Withdrawing NFT…';
         const tx = await escrowWrite.withdrawNFT(offerId);
         await tx.wait();
-
         el('my-offers-status').textContent = 'NFT withdrawn';
-
         await refreshUserStats();
         await loadFulfilledOffers();
-
       } catch (e) {
         el('my-offers-status').textContent = e.message || 'Withdraw failed';
       }
@@ -735,5 +607,57 @@ async function loadPreviewImage() {
       ticker.classList.add('running');
     });
   </script>
+
+  <!-- ================= ADDED: Whitelist popup (modal) ================= -->
+  <div id="wl-backdrop" class="wl-backdrop" aria-hidden="true">
+    <div class="wl-modal" role="dialog" aria-modal="true" aria-labelledby="wl-title" aria-describedby="wl-desc">
+      <header>
+        <h3 id="wl-title" style="margin:0">Whitelisted NFT Collections</h3>
+        <button type="button" class="wl-x" aria-label="Close">&times;</button>
+      </header>
+      <div class="wl-content">
+        <p id="wl-desc" style="margin:0 0 .75rem 0">
+          This file lists <b>name</b>, <b>CA</b> (contract address), and <b>image</b> (ArDrive link).
+        </p>
+        <p style="margin:0">
+          <a id="wl-link" href="#" target="_blank" rel="noopener" style="color:var(--neon);text-decoration:none">
+            Open whitelist file ↗
+          </a>
+        </p>
+      </div>
+      <div class="wl-footer">
+        <button type="button" class="wl-x" aria-label="Close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Minimal script to open/close modal without touching your existing logic.
+    (function(){
+      // Set this to your whitelist file (JSON/CSV you maintain).
+      const WL_URL = './whitelist.csv'; // <-- change this path
+      const openBtn  = document.getElementById('btn-open-whitelist');
+      const backdrop = document.getElementById('wl-backdrop');
+      const link     = document.getElementById('wl-link');
+      link.href = WL_URL;
+
+      function openModal(){
+        backdrop.classList.add('open');
+        backdrop.setAttribute('aria-hidden','false');
+        document.addEventListener('keydown', onEsc);
+      }
+      function closeModal(){
+        backdrop.classList.remove('open');
+        backdrop.setAttribute('aria-hidden','true');
+        document.removeEventListener('keydown', onEsc);
+      }
+      function onEsc(e){ if(e.key === 'Escape') closeModal(); }
+
+      openBtn.addEventListener('click', openModal);
+      backdrop.addEventListener('click', (e)=>{ if(e.target === backdrop) closeModal(); });
+      backdrop.querySelectorAll('.wl-x').forEach(b => b.addEventListener('click', closeModal));
+    })();
+  </script>
+  <!-- =================================================================== -->
 </body>
 </html>
