@@ -181,17 +181,13 @@
   <div class="lower-section">
     <div class="box">
       <h1>Create Offer</h1>
-
       <label for="offer-collection">NFT Collection</label>
       <input id="offer-collection" placeholder="0x... (NFT collection)"/>
-
       <label for="offer-amount">Offer Amount (S)</label>
       <input id="offer-amount" type="number" min="0" step="0.0001" placeholder="Amount in S"/>
-
       <label for="offer-expiry">Expiry (hours, 0 = no expiry)</label>
       <input id="offer-expiry" type="number" min="0" step="1" placeholder="e.g. 24 for 1 day"/>
-
-      <div class="info small" id="offer-fee-preview">Fee: –  Total to send: –</div>
+      <div class="info small" id="offer-fee-preview">Fee: – Total to send: –</div>
 
       <!-- ===== ADDED: Collection name display (same style as fee preview) ===== -->
       <div class="info small" id="offer-collection-name">Collection name: –</div>
@@ -201,31 +197,26 @@
       <button class="action" id="btn-create-offer">Create Offer</button>
       <div class="info" id="offer-status"></div>
     </div>
-<div class="box">
-      <h1>Offers by Collection</h1>
 
+    <div class="box">
+      <h1>Offers by Collection</h1>
       <label for="browse-collection">NFT Collection</label>
       <input id="browse-collection" placeholder="0x... (NFT collection)"/>
       <button class="action" id="btn-load-collection-offers">Load Active Offers</button>
-
       <div class="info" style="margin-top:1rem;">
         <img id="nft-preview" style="max-width:100%; border-radius:12px; display:none;" />
       </div>
-
       <label for="collection-offers" class="small" style="margin-top:.5rem;">Active Offers</label>
       <select id="collection-offers" size="8"></select>
-
       <label for="fulfil-token-id" class="small" style="margin-top:.5rem;">Token ID to sell into selected offer</label>
       <input id="fulfil-token-id" type="number" min="0" placeholder="Your NFT tokenId"/>
-
       <button class="action" id="btn-fulfil-offer">Fulfil Offer</button>
       <div class="info small" id="collection-offers-status"></div>
     </div>
-
-    <div class="box">
+<div class="box">
       <h1>My Offers</h1>
 
-      <button class="action" id="btn-load-my-offers">Load My Active Offers</button>
+      <!-- REMOVED: Load My Active Offers button (auto-loads on wallet connect) -->
 
       <label for="my-offers" class="small" style="margin-top:.5rem;">My Active Offers</label>
       <select id="my-offers" size="8"></select>
@@ -248,7 +239,7 @@
   </div>
 
   <script type="module">
-import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.esm.min.js';
+    import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.esm.min.js';
 
     const ESCROW_ADDRESS = "0xD08bCA21e3Bf4E4bB4D96656669896EAbF7a43f7";
     const REQUIRED_CHAIN_ID = 14601;
@@ -277,7 +268,6 @@ import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.es
       "function approve(address,uint256)",
       "function setApprovalForAll(address,bool)",
       "function tokenURI(uint256) view returns (string)",
-
       /* ===== ADDED: contract name() so we can show collection name in Create Offer ===== */
       "function name() view returns (string)"
       /* ============================================================================ */
@@ -317,7 +307,6 @@ import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.es
         const name = await nft.name();
         out.textContent = `Collection name: ${name}`;
       } catch (err) {
-        // If addr is not a contract / not ERC721 / call fails:
         out.textContent = 'Collection name: (unavailable)';
       }
     }
@@ -329,7 +318,6 @@ import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.es
     /* ===================================================================== */
 
     async function loadPreviewImage() {
-      console.log("loadPreviewImage triggered");
       const addr = el('browse-collection').value.trim();
       if (!ethers.utils.isAddress(addr)) {
         el('nft-preview').style.display = 'none';
@@ -341,7 +329,6 @@ import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.es
           ERC721_ABI,
           provider || new ethers.providers.JsonRpcProvider(SONIC_RPC)
         );
-
         let uri = await nft.tokenURI(1);
         if (uri.startsWith("ipfs://")) {
           uri = "https://ipfs.io/ipfs/" + uri.replace("ipfs://", "");
@@ -376,8 +363,7 @@ import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.es
         return false;
       }
     }
-
-    async function trySwitchOrAdd() {
+async function trySwitchOrAdd() {
       if (!window.ethereum) return false;
       const rpcOk = await rpcReportsCorrectChain();
       if (!rpcOk) return false;
@@ -448,8 +434,12 @@ import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.es
       await refreshUserStats();
       await loadFulfilledOffers();
 
-      // If user already typed a CA before connecting, refresh name using the new provider
+      // ADDED previously: refresh collection name after connect
       scheduleOfferCollectionNameLoad();
+
+      // ===== NEW: Auto-load My Active Offers on wallet connect =====
+      await loadMyOffers();
+      // ============================================================
     }
 
     async function refreshUserStats() {
@@ -457,7 +447,7 @@ import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.es
       try {
         const [total, active, fulfilled, cancelled] = await escrowRead.getUserStats(account);
         el('user-offer-stats').textContent =
-          `total ${total}  active ${active}  filled ${fulfilled}  cancelled ${cancelled}`;
+          `total ${total} active ${active} filled ${fulfilled} cancelled ${cancelled}`;
       } catch {
         el('user-offer-stats').textContent = '–';
       }
@@ -478,7 +468,7 @@ import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.es
         const feeWei = await escrowRead.calculateFee(amountWei);
         const totalWei = amountWei.add(feeWei);
         el('offer-fee-preview').textContent =
-          `Fee: ${ethers.utils.formatEther(feeWei)} S  Total to send: ${ethers.utils.formatEther(totalWei)} S`;
+          `Fee: ${ethers.utils.formatEther(feeWei)} S Total to send: ${ethers.utils.formatEther(totalWei)} S`;
       } catch (e) {
         el('offer-fee-preview').textContent = e.message || 'Fee preview failed';
       }
@@ -518,6 +508,7 @@ import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.es
         await tx.wait();
         el('offer-status').textContent = 'Offer created';
         await refreshUserStats();
+        await loadMyOffers(); // optional refresh after creating offer
       } catch (e) {
         el('offer-status').textContent = e.message || 'Create failed';
       }
@@ -704,6 +695,7 @@ import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.es
         el('my-offers-status').textContent = 'NFT withdrawn';
         await refreshUserStats();
         await loadFulfilledOffers();
+        await loadMyOffers(); // optional refresh after withdrawing
       } catch (e) {
         el('my-offers-status').textContent = e.message || 'Withdraw failed';
       }
@@ -715,16 +707,17 @@ import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.es
     el('btn-create-offer').onclick = createOffer;
     el('btn-load-collection-offers').onclick = loadCollectionOffers;
     el('btn-fulfil-offer').onclick = fulfilOffer;
-    el('btn-load-my-offers').onclick = loadMyOffers;
+
+    // REMOVED: el('btn-load-my-offers').onclick = loadMyOffers;
+
     el('btn-cancel-offer').onclick = cancelOffer;
     el('btn-withdraw-nft').onclick = withdrawNFT;
 
     // Existing preview image listener
     el('browse-collection').addEventListener('input', loadPreviewImage);
 
-    // ===== ADDED: Collection-name lookup listener (Create Offer) =====
+    // Collection-name lookup listener (Create Offer)
     el('offer-collection').addEventListener('input', scheduleOfferCollectionNameLoad);
-    // ===============================================================
 
     window.addEventListener('load', async () => {
       await rpcReportsCorrectChain();
