@@ -189,9 +189,8 @@
       <input id="offer-expiry" type="number" min="0" step="1" placeholder="e.g. 24 for 1 day"/>
       <div class="info small" id="offer-fee-preview">Fee: – Total to send: –</div>
 
-      <!-- ===== ADDED: Collection name display (same style as fee preview) ===== -->
+      <!-- ===== Collection name display ===== -->
       <div class="info small" id="offer-collection-name">Collection name: –</div>
-      <!-- =================================================================== -->
 
       <button class="action" id="btn-preview-fee">Preview Fee</button>
       <button class="action" id="btn-create-offer">Create Offer</button>
@@ -202,30 +201,31 @@
       <h1>Offers by Collection</h1>
       <label for="browse-collection">NFT Collection</label>
       <input id="browse-collection" placeholder="0x... (NFT collection)"/>
-      <button class="action" id="btn-load-collection-offers">Load Active Offers</button>
+
+      <!-- REMOVED: Load Active Offers button (auto loads on input/paste) -->
+      <!-- <button class="action" id="btn-load-collection-offers">Load Active Offers</button> -->
+
       <div class="info" style="margin-top:1rem;">
         <img id="nft-preview" style="max-width:100%; border-radius:12px; display:none;" />
       </div>
+
       <label for="collection-offers" class="small" style="margin-top:.5rem;">Active Offers</label>
       <select id="collection-offers" size="8"></select>
+
       <label for="fulfil-token-id" class="small" style="margin-top:.5rem;">Token ID to sell into selected offer</label>
       <input id="fulfil-token-id" type="number" min="0" placeholder="Your NFT tokenId"/>
+
       <button class="action" id="btn-fulfil-offer">Fulfil Offer</button>
       <div class="info small" id="collection-offers-status"></div>
     </div>
 <div class="box">
       <h1>My Offers</h1>
-
-      <!-- REMOVED: Load My Active Offers button (auto-loads on wallet connect) -->
-
+      <button class="action" id="btn-load-my-offers">Load My Active Offers</button>
       <label for="my-offers" class="small" style="margin-top:.5rem;">My Active Offers</label>
       <select id="my-offers" size="8"></select>
-
       <button class="action" id="btn-cancel-offer">Cancel Selected Offer</button>
-
       <label for="withdraw-offer-id" class="small" style="margin-top:.75rem;">Fulfilled Offers (NFT Ready)</label>
       <select id="withdraw-offer-id" size="5"></select>
-
       <button class="action" id="btn-withdraw-nft">Withdraw NFT</button>
       <div class="info small" id="my-offers-status"></div>
     </div>
@@ -268,9 +268,7 @@
       "function approve(address,uint256)",
       "function setApprovalForAll(address,bool)",
       "function tokenURI(uint256) view returns (string)",
-      /* ===== ADDED: contract name() so we can show collection name in Create Offer ===== */
       "function name() view returns (string)"
-      /* ============================================================================ */
     ];
 
     const SONIC_PARAMS = [{
@@ -286,7 +284,7 @@
 
     const el = id => document.getElementById(id);
 
-    /* ===== ADDED: Debounced collection-name loader for Create Offer ===== */
+    /* ===== Debounced collection-name loader for Create Offer ===== */
     let offerNameTimer = null;
 
     async function loadOfferCollectionName() {
@@ -314,6 +312,27 @@
     function scheduleOfferCollectionNameLoad() {
       clearTimeout(offerNameTimer);
       offerNameTimer = setTimeout(loadOfferCollectionName, 350);
+    }
+
+    /* ===== NEW: Debounced Active Offers loader for Offers by Collection ===== */
+    let browseOffersTimer = null;
+
+    function scheduleBrowseOffersLoad() {
+      clearTimeout(browseOffersTimer);
+      browseOffersTimer = setTimeout(async () => {
+        const nft = el('browse-collection').value.trim();
+        const sel = el('collection-offers');
+
+        // Clear list while typing / invalid address
+        if (!ethers.utils.isAddress(nft)) {
+          sel.innerHTML = '';
+          el('collection-offers-status').textContent = nft ? 'Invalid collection address' : 'Enter collection address';
+          return;
+        }
+
+        // If address is valid, load offers
+        await loadCollectionOffers();
+      }, 350);
     }
     /* ===================================================================== */
 
@@ -434,12 +453,11 @@ async function trySwitchOrAdd() {
       await refreshUserStats();
       await loadFulfilledOffers();
 
-      // ADDED previously: refresh collection name after connect
+      // Refresh Create Offer name if address already entered
       scheduleOfferCollectionNameLoad();
 
-      // ===== NEW: Auto-load My Active Offers on wallet connect =====
-      await loadMyOffers();
-      // ============================================================
+      // NEW: If browse-collection already contains a valid CA, auto-load offers
+      scheduleBrowseOffersLoad();
     }
 
     async function refreshUserStats() {
@@ -508,7 +526,6 @@ async function trySwitchOrAdd() {
         await tx.wait();
         el('offer-status').textContent = 'Offer created';
         await refreshUserStats();
-        await loadMyOffers(); // optional refresh after creating offer
       } catch (e) {
         el('offer-status').textContent = e.message || 'Create failed';
       }
@@ -695,7 +712,6 @@ async function trySwitchOrAdd() {
         el('my-offers-status').textContent = 'NFT withdrawn';
         await refreshUserStats();
         await loadFulfilledOffers();
-        await loadMyOffers(); // optional refresh after withdrawing
       } catch (e) {
         el('my-offers-status').textContent = e.message || 'Withdraw failed';
       }
@@ -705,16 +721,20 @@ async function trySwitchOrAdd() {
     el('wallet-button').onclick = connectWallet;
     el('btn-preview-fee').onclick = previewFee;
     el('btn-create-offer').onclick = createOffer;
-    el('btn-load-collection-offers').onclick = loadCollectionOffers;
+
+    // REMOVED: button no longer exists
+    // el('btn-load-collection-offers').onclick = loadCollectionOffers;
+
     el('btn-fulfil-offer').onclick = fulfilOffer;
-
-    // REMOVED: el('btn-load-my-offers').onclick = loadMyOffers;
-
+    el('btn-load-my-offers').onclick = loadMyOffers;
     el('btn-cancel-offer').onclick = cancelOffer;
     el('btn-withdraw-nft').onclick = withdrawNFT;
 
-    // Existing preview image listener
-    el('browse-collection').addEventListener('input', loadPreviewImage);
+    // Combine: preview + auto-load offers when CA changes
+    el('browse-collection').addEventListener('input', () => {
+      loadPreviewImage();
+      scheduleBrowseOffersLoad();
+    });
 
     // Collection-name lookup listener (Create Offer)
     el('offer-collection').addEventListener('input', scheduleOfferCollectionNameLoad);
@@ -723,6 +743,9 @@ async function trySwitchOrAdd() {
       await rpcReportsCorrectChain();
       const ticker = el('rolling-stats');
       ticker.classList.add('running');
+
+      // Optional: show helpful default status on first load
+      el('collection-offers-status').textContent = 'Enter collection address';
     });
   </script>
 </body>
