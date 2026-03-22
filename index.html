@@ -189,9 +189,7 @@
       <input id="offer-expiry" type="number" min="0" step="1" placeholder="e.g. 24 for 1 day"/>
       <div class="info small" id="offer-fee-preview">Fee: – Total to send: –</div>
 
-      <!-- ===== ADDED: Collection name display (same style as fee preview) ===== -->
       <div class="info small" id="offer-collection-name">Collection name: –</div>
-      <!-- =================================================================== -->
 
       <button class="action" id="btn-preview-fee">Preview Fee</button>
       <button class="action" id="btn-create-offer">Create Offer</button>
@@ -202,21 +200,26 @@
       <h1>Offers by Collection</h1>
       <label for="browse-collection">NFT Collection</label>
       <input id="browse-collection" placeholder="0x... (NFT collection)"/>
-      <button class="action" id="btn-load-collection-offers">Load Active Offers</button>
+
+      <!-- REMOVED: Load Active Offers button -->
+
       <div class="info" style="margin-top:1rem;">
         <img id="nft-preview" style="max-width:100%; border-radius:12px; display:none;" />
       </div>
+
       <label for="collection-offers" class="small" style="margin-top:.5rem;">Active Offers</label>
       <select id="collection-offers" size="8"></select>
+
       <label for="fulfil-token-id" class="small" style="margin-top:.5rem;">Token ID to sell into selected offer</label>
       <input id="fulfil-token-id" type="number" min="0" placeholder="Your NFT tokenId"/>
+
       <button class="action" id="btn-fulfil-offer">Fulfil Offer</button>
       <div class="info small" id="collection-offers-status"></div>
     </div>
 <div class="box">
       <h1>My Offers</h1>
 
-      <!-- REMOVED: Load My Active Offers button (auto-loads on wallet connect) -->
+      <!-- REMOVED: Load My Active Offers button (auto-load on connect) -->
 
       <label for="my-offers" class="small" style="margin-top:.5rem;">My Active Offers</label>
       <select id="my-offers" size="8"></select>
@@ -268,9 +271,7 @@
       "function approve(address,uint256)",
       "function setApprovalForAll(address,bool)",
       "function tokenURI(uint256) view returns (string)",
-      /* ===== ADDED: contract name() so we can show collection name in Create Offer ===== */
       "function name() view returns (string)"
-      /* ============================================================================ */
     ];
 
     const SONIC_PARAMS = [{
@@ -286,7 +287,7 @@
 
     const el = id => document.getElementById(id);
 
-    /* ===== ADDED: Debounced collection-name loader for Create Offer ===== */
+    /* ===== Create Offer: Debounced collection-name loader ===== */
     let offerNameTimer = null;
 
     async function loadOfferCollectionName() {
@@ -306,7 +307,7 @@
         const nft = new ethers.Contract(addr, ERC721_ABI, rpcProvider);
         const name = await nft.name();
         out.textContent = `Collection name: ${name}`;
-      } catch (err) {
+      } catch {
         out.textContent = 'Collection name: (unavailable)';
       }
     }
@@ -315,7 +316,33 @@
       clearTimeout(offerNameTimer);
       offerNameTimer = setTimeout(loadOfferCollectionName, 350);
     }
-    /* ===================================================================== */
+
+    /* ===== Offers by Collection: Debounced auto-load offers on input/paste ===== */
+    let browseOffersTimer = null;
+
+    function scheduleBrowseOffersLoad() {
+      clearTimeout(browseOffersTimer);
+      browseOffersTimer = setTimeout(async () => {
+        const nft = el('browse-collection').value.trim();
+        const sel = el('collection-offers');
+        const status = el('collection-offers-status');
+
+        if (!nft) {
+          sel.innerHTML = '';
+          status.textContent = 'Enter collection address';
+          return;
+        }
+
+        if (!ethers.utils.isAddress(nft)) {
+          sel.innerHTML = '';
+          status.textContent = 'Invalid collection address';
+          return;
+        }
+
+        await loadCollectionOffers(); // uses browse-collection value internally
+      }, 300);
+    }
+    /* ======================================================================== */
 
     async function loadPreviewImage() {
       const addr = el('browse-collection').value.trim();
@@ -329,6 +356,7 @@
           ERC721_ABI,
           provider || new ethers.providers.JsonRpcProvider(SONIC_RPC)
         );
+
         let uri = await nft.tokenURI(1);
         if (uri.startsWith("ipfs://")) {
           uri = "https://ipfs.io/ipfs/" + uri.replace("ipfs://", "");
@@ -407,6 +435,7 @@ async function trySwitchOrAdd() {
         el('wallet-status').textContent = 'Disconnected';
         return;
       }
+
       provider = new ethers.providers.Web3Provider(window.ethereum, 'any');
       signer = provider.getSigner();
       account = await signer.getAddress();
@@ -434,12 +463,12 @@ async function trySwitchOrAdd() {
       await refreshUserStats();
       await loadFulfilledOffers();
 
-      // ADDED previously: refresh collection name after connect
-      scheduleOfferCollectionNameLoad();
-
-      // ===== NEW: Auto-load My Active Offers on wallet connect =====
+      // Auto-load My Offers (your desired behavior)
       await loadMyOffers();
-      // ============================================================
+
+      // If fields already contain values, refresh derived displays
+      scheduleOfferCollectionNameLoad();
+      scheduleBrowseOffersLoad();
     }
 
     async function refreshUserStats() {
@@ -491,6 +520,7 @@ async function trySwitchOrAdd() {
         el('offer-status').textContent = 'Amount must be > 0';
         return;
       }
+
       try {
         const amountWei = ethers.utils.parseEther(amountStr);
         const feeWei = await escrowRead.calculateFee(amountWei);
@@ -508,7 +538,7 @@ async function trySwitchOrAdd() {
         await tx.wait();
         el('offer-status').textContent = 'Offer created';
         await refreshUserStats();
-        await loadMyOffers(); // optional refresh after creating offer
+        await loadMyOffers();
       } catch (e) {
         el('offer-status').textContent = e.message || 'Create failed';
       }
@@ -519,31 +549,38 @@ async function trySwitchOrAdd() {
         el('collection-offers-status').textContent = 'Connect wallet first';
         return;
       }
+
       const nft = el('browse-collection').value.trim();
       if (!ethers.utils.isAddress(nft)) {
         el('collection-offers-status').textContent = 'Invalid collection address';
         return;
       }
+
       el('collection-offers-status').textContent = 'Loading…';
       const sel = el('collection-offers');
       sel.innerHTML = '';
+
       try {
         const ids = await escrowRead.getActiveOffersByCollection(nft);
         if (!ids.length) {
           el('collection-offers-status').textContent = 'No active offers';
           return;
         }
+
         for (const id of ids) {
           const offer = await escrowRead.getOffer(id);
           const opt = document.createElement('option');
           opt.value = id.toString();
+
           const amount = ethers.utils.formatEther(offer.amount);
           const expiry = offer.expiry.toString() === '0'
             ? 'no expiry'
             : new Date(Number(offer.expiry) * 1000).toLocaleString();
+
           opt.textContent = `#${id} — ${amount} S — expiry: ${expiry}`;
           sel.appendChild(opt);
         }
+
         el('collection-offers-status').textContent = `Loaded ${ids.length} offers`;
       } catch (e) {
         el('collection-offers-status').textContent = e.message || 'Load failed';
@@ -558,7 +595,7 @@ async function trySwitchOrAdd() {
         const all = await escrowRead.getOffersByBuyer(account);
         for (const id of all) {
           const offer = await escrowRead.getOffer(id);
-          if (offer.status === 3) { // Status.Fulfilled
+          if (offer.status === 3) {
             const opt = document.createElement('option');
             opt.value = id.toString();
             opt.textContent = `Offer #${id} — NFT ready to withdraw`;
@@ -584,6 +621,7 @@ async function trySwitchOrAdd() {
       const sel = el('collection-offers');
       const offerId = sel.value;
       const tokenIdStr = el('fulfil-token-id').value.trim();
+
       if (!offerId) {
         el('collection-offers-status').textContent = 'Select an offer';
         return;
@@ -592,23 +630,28 @@ async function trySwitchOrAdd() {
         el('collection-offers-status').textContent = 'Enter tokenId';
         return;
       }
+
       try {
         const offer = await escrowRead.getOffer(offerId);
         const nftAddress = offer.nftContract;
+
         const nft = new ethers.Contract(nftAddress, ERC721_ABI, signer);
         const approved = await nft.getApproved(tokenIdStr);
         const isAll = await nft.isApprovedForAll(account, ESCROW_ADDRESS);
+
         if (approved !== ESCROW_ADDRESS && !isAll) {
           el('collection-offers-status').textContent = 'Requesting approval…';
           const txA = await nft.approve(ESCROW_ADDRESS, tokenIdStr);
           await txA.wait();
         }
+
         el('collection-offers-status').textContent = 'Sending fulfil transaction…';
         const tx = await escrowWrite.fulfilOffer(offerId, tokenIdStr);
         await tx.wait();
+
         el('collection-offers-status').textContent = 'Offer fulfilled';
         await refreshUserStats();
-        await loadCollectionOffers();
+        await loadCollectionOffers();   // keeps the list updated
         await loadFulfilledOffers();
       } catch (e) {
         el('collection-offers-status').textContent = e.message || 'Fulfil failed';
@@ -634,6 +677,7 @@ async function trySwitchOrAdd() {
           const opt = document.createElement('option');
           opt.value = id.toString();
           const amount = ethers.utils.formatEther(offer.amount);
+
           let expiry;
           if (offer.expiry.toString() === '0') {
             expiry = 'no expiry';
@@ -695,7 +739,6 @@ async function trySwitchOrAdd() {
         el('my-offers-status').textContent = 'NFT withdrawn';
         await refreshUserStats();
         await loadFulfilledOffers();
-        await loadMyOffers(); // optional refresh after withdrawing
       } catch (e) {
         el('my-offers-status').textContent = e.message || 'Withdraw failed';
       }
@@ -705,24 +748,23 @@ async function trySwitchOrAdd() {
     el('wallet-button').onclick = connectWallet;
     el('btn-preview-fee').onclick = previewFee;
     el('btn-create-offer').onclick = createOffer;
-    el('btn-load-collection-offers').onclick = loadCollectionOffers;
     el('btn-fulfil-offer').onclick = fulfilOffer;
-
-    // REMOVED: el('btn-load-my-offers').onclick = loadMyOffers;
-
     el('btn-cancel-offer').onclick = cancelOffer;
     el('btn-withdraw-nft').onclick = withdrawNFT;
 
-    // Existing preview image listener
-    el('browse-collection').addEventListener('input', loadPreviewImage);
+    // Offers by Collection: auto preview + auto load offers on input/paste
+    el('browse-collection').addEventListener('input', () => {
+      loadPreviewImage();
+      scheduleBrowseOffersLoad();
+    });
 
-    // Collection-name lookup listener (Create Offer)
+    // Create Offer: name lookup
     el('offer-collection').addEventListener('input', scheduleOfferCollectionNameLoad);
 
     window.addEventListener('load', async () => {
       await rpcReportsCorrectChain();
-      const ticker = el('rolling-stats');
-      ticker.classList.add('running');
+      el('rolling-stats').classList.add('running');
+      el('collection-offers-status').textContent = 'Enter collection address';
     });
   </script>
 </body>
