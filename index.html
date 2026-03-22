@@ -589,7 +589,7 @@ async function trySwitchOrAdd() {
             ? 'no expiry'
             : new Date(Number(offer.expiry) * 1000).toLocaleString();
 
-          opt.textContent = `#${id} — ${collectionName} — ${amount} S — expiry: ${expiry}`;
+          opt.textContent = `${collectionName} — ${amount} S — expiry: ${expiry}`;
           sel.appendChild(opt);
         }
 
@@ -721,7 +721,7 @@ async function trySwitchOrAdd() {
           }
 
           const name = await getCollectionName(offer.nftContract);
-          opt.textContent = `#${name} — ${amount} S — expiry: ${expiry}`;
+          opt.textContent = `${name} — ${amount} S — ${expiry}`;
           sel.appendChild(opt);
         }
 
