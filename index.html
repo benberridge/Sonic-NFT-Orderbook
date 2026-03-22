@@ -13,93 +13,156 @@
   <title>NFT Orderbook</title>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet"/>
   <style>
-    :root{
-      --neon:#00ffe1;
-      --neon-dim:rgba(0,255,225,0.2);
-      --text-light:#e0e0e0;
-      --card-bg:rgba(255,255,255,0.05);
-      --radius:16px;
-      --gap:1.5rem;
-      --transition:0.3s ease;
-      --banner-h:48px;
+    :root {
+      --neon: #00ffe1;
+      --neon-dim: rgba(0,255,225,0.2);
+      --text-light: #e0e0e0;
+      --card-bg: rgba(255,255,255,0.05);
+      --radius: 16px;
+      --gap: 1.5rem;
+      --transition: 0.3s ease;
+      --banner-h: 48px;
     }
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{
-      background:radial-gradient(circle at center,#1a1a3d,#0a0a1f);
-      color:var(--text-light);
-      font-family:'Roboto',sans-serif;
-      padding:calc(var(--gap) + var(--banner-h)) var(--gap) var(--gap);
-      line-height:1.4;
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(circle at center,#1a1a3d,#0a0a1f);
+      color: var(--text-light);
+      font-family: 'Roboto', sans-serif;
+      padding: calc(var(--gap) + var(--banner-h)) var(--gap) var(--gap);
+      line-height: 1.4;
     }
-    .top-banner{
-      position:fixed;top:0;left:0;right:0;height:var(--banner-h);
-      background:linear-gradient(90deg, rgba(0,0,0,0.45), rgba(0,0,0,0.25));
-      border-bottom:1px solid rgba(255,255,255,0.06);
-      display:flex;align-items:center;overflow:hidden;z-index:1000;padding:0 1rem;
-      backdrop-filter:blur(6px);
+    .top-banner {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: var(--banner-h);
+      background: linear-gradient(90deg, rgba(0,0,0,0.45), rgba(0,0,0,0.25));
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      z-index: 1000;
+      padding: 0 1rem;
+      backdrop-filter: blur(6px);
     }
-    .ticker{
-      display:inline-block;white-space:nowrap;will-change:transform;transform:translateX(100%);
-      animation:scroll-left 36s linear infinite;animation-play-state:paused;
-      font-weight:500;color:var(--text-light);font-size:0.95rem;
+    .ticker {
+      display: inline-block;
+      white-space: nowrap;
+      will-change: transform;
+      transform: translateX(100%);
+      animation: scroll-left 36s linear infinite;
+      animation-play-state: paused;
+      font-weight: 500;
+      color: var(--text-light);
+      font-size: 0.95rem;
     }
-    .ticker.running{animation-play-state:running}
-    @keyframes scroll-left{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}
-    .stat-pill{
-      display:inline-block;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.04);
-      padding:6px 12px;margin-right:12px;border-radius:999px;color:var(--neon);
-      box-shadow:0 0 4px rgba(0,255,225,0.04);
+    .ticker.running { animation-play-state: running; }
+    @keyframes scroll-left {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
     }
-    .brand{ text-align:center;font-size:2.3rem;font-weight:700;color:var(--neon);margin-bottom:var(--gap);letter-spacing:2px }
-    #wallet-button{
-      position:fixed;top:calc(var(--banner-h) + 8px);right:var(--gap);
-      padding:.6rem 1.2rem;border:2px solid var(--neon);background:transparent;color:var(--neon);
-      border-radius:var(--radius);font-weight:500;cursor:pointer;transition:background var(--transition), color var(--transition);z-index:1101;
+    .stat-pill {
+      display: inline-block;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.04);
+      padding: 6px 12px;
+      margin-right: 12px;
+      border-radius: 999px;
+      color: var(--neon);
+      box-shadow: 0 0 4px rgba(0,255,225,0.04);
     }
-    #wallet-button:hover{background:var(--neon-dim);color:#fff}
-    .lower-section{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:var(--gap)}
-    .box{
-      background:var(--card-bg);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);
-      border-radius:var(--radius);padding:var(--gap);display:flex;flex-direction:column;
-      transition:transform var(--transition), box-shadow var(--transition);
+    .brand {
+      text-align: center;
+      font-size: 2.3rem;
+      font-weight: 700;
+      color: var(--neon);
+      margin-bottom: var(--gap);
+      letter-spacing: 2px;
     }
-    .box:hover{transform:translateY(-6px);box-shadow:0 4px 32px rgba(0,0,0,0.6)}
-    h1{font-size:1.5rem;font-weight:700;color:var(--neon);text-align:center;margin-bottom:1rem}
-    label{font-weight:500;margin-bottom:.35rem;color:var(--text-light);display:block}
-    input,select{
-      width:100%;padding:.55rem .6rem;margin-bottom:.75rem;border:1px solid rgba(255,255,255,0.2);
-      border-radius:8px;background:rgba(255,255,255,0.03);color:var(--text-light);font-size:0.95rem;transition:border var(--transition)
+    #wallet-button {
+      position: fixed;
+      top: calc(var(--banner-h) + 8px);
+      right: var(--gap);
+      padding: .6rem 1.2rem;
+      border: 2px solid var(--neon);
+      background: transparent;
+      color: var(--neon);
+      border-radius: var(--radius);
+      font-weight: 500;
+      cursor: pointer;
+      transition: background var(--transition), color var(--transition);
+      z-index: 1101;
     }
-    input:focus,select:focus{outline:none;border-color:var(--neon)}
-    button.action{
-      padding:.6rem .9rem;border:2px solid var(--neon);background:transparent;color:var(--neon);
-      border-radius:8px;font-weight:500;cursor:pointer;transition:background var(--transition), color var(--transition);
-      margin-top:.25rem;width:100%;
+    #wallet-button:hover { background: var(--neon-dim); color: #fff; }
+    .lower-section {
+      display: grid;
+      grid-template-columns: repeat(auto-fit,minmax(320px,1fr));
+      gap: var(--gap);
     }
-    button.action:hover{background:var(--neon-dim);color:#fff}
-    .info{text-align:center;margin:.5rem 0;font-size:.9rem}
-    .small{font-size:0.8rem;opacity:0.8}
-    @media (max-width:600px){
-      .ticker{animation-duration:52s;font-size:0.85rem}
-      body{padding-top:calc(var(--banner-h) + 12px)}
+    .box {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: var(--radius);
+      padding: var(--gap);
+      display: flex;
+      flex-direction: column;
+      transition: transform var(--transition), box-shadow var(--transition);
     }
-
-    /* ===================== ADDED: Minimal modal styles (namespaced) ===================== */
-    .wl-backdrop{
-      position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:2000;
+    .box:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 4px 32px rgba(0,0,0,0.6);
     }
-    .wl-backdrop.open{display:flex}
-    .wl-modal{
-      width:min(720px,94vw);max-height:88vh;overflow:auto;background:#0e1422;color:inherit;
-      border:1px solid rgba(255,255,255,0.12);border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.45)
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--neon);
+      text-align: center;
+      margin-bottom: 1rem;
     }
-    .wl-modal header,.wl-modal .wl-footer{
-      padding:.75rem 1rem;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.12)
+    label {
+      font-weight: 500;
+      margin-bottom: .35rem;
+      color: var(--text-light);
+      display: block;
     }
-    .wl-modal .wl-footer{border-top:1px solid rgba(255,255,255,0.12);border-bottom:none}
-    .wl-modal .wl-content{padding:1rem}
-    .wl-x{background:transparent;border:none;color:inherit;font-size:1.25rem;cursor:pointer}
-    /* ================================================================================ */
+    input, select {
+      width: 100%;
+      padding: .55rem .6rem;
+      margin-bottom: .75rem;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.03);
+      color: var(--text-light);
+      font-size: 0.95rem;
+      transition: border var(--transition);
+    }
+    input:focus, select:focus { outline: none; border-color: var(--neon); }
+    button.action {
+      padding: .6rem .9rem;
+      border: 2px solid var(--neon);
+      background: transparent;
+      color: var(--neon);
+      border-radius: 8px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background var(--transition), color var(--transition);
+      margin-top: .25rem;
+      width: 100%;
+    }
+    button.action:hover { background: var(--neon-dim); color: #fff; }
+    .info {
+      text-align: center;
+      margin: .5rem 0;
+      font-size: .9rem;
+    }
+    .small {
+      font-size: 0.8rem;
+      opacity: 0.8;
+    }
+    @media (max-width: 600px) {
+      .ticker { animation-duration: 52s; font-size: 0.85rem; }
+      body { padding-top: calc(var(--banner-h) + 12px); }
+    }
   </style>
 </head>
 <body>
@@ -111,53 +174,67 @@
       <span class="stat-pill">My offers: <span id="user-offer-stats">–</span></span>
     </div>
   </div>
+
   <div class="brand">NFT Orderbook</div>
-  <button id="wallet-button">Connect</button>
+  <button id="wallet-button">Connect Wallet</button>
 
   <div class="lower-section">
     <div class="box">
       <h1>Create Offer</h1>
+
       <label for="offer-collection">NFT Collection</label>
       <input id="offer-collection" placeholder="0x... (NFT collection)"/>
+
       <label for="offer-amount">Offer Amount (S)</label>
       <input id="offer-amount" type="number" min="0" step="0.0001" placeholder="Amount in S"/>
+
       <label for="offer-expiry">Expiry (hours, 0 = no expiry)</label>
       <input id="offer-expiry" type="number" min="0" step="1" placeholder="e.g. 24 for 1 day"/>
+
       <div class="info small" id="offer-fee-preview">Fee: –  Total to send: –</div>
+
+      <!-- ===== ADDED: Collection name display (same style as fee preview) ===== -->
+      <div class="info small" id="offer-collection-name">Collection name: –</div>
+      <!-- =================================================================== -->
+
       <button class="action" id="btn-preview-fee">Preview Fee</button>
       <button class="action" id="btn-create-offer">Create Offer</button>
       <div class="info" id="offer-status"></div>
     </div>
-
-    <div class="box">
+<div class="box">
       <h1>Offers by Collection</h1>
-
-      <!-- ================= ADDED: Popup button (just above 'NFT Collection') ================= -->
-      <button class="action" id="btn-open-whitelist">View Whitelisted NFTs</button>
-      <!-- ================================================================================ -->
 
       <label for="browse-collection">NFT Collection</label>
       <input id="browse-collection" placeholder="0x... (NFT collection)"/>
       <button class="action" id="btn-load-collection-offers">Load Active Offers</button>
+
       <div class="info" style="margin-top:1rem;">
         <img id="nft-preview" style="max-width:100%; border-radius:12px; display:none;" />
       </div>
+
       <label for="collection-offers" class="small" style="margin-top:.5rem;">Active Offers</label>
       <select id="collection-offers" size="8"></select>
+
       <label for="fulfil-token-id" class="small" style="margin-top:.5rem;">Token ID to sell into selected offer</label>
       <input id="fulfil-token-id" type="number" min="0" placeholder="Your NFT tokenId"/>
+
       <button class="action" id="btn-fulfil-offer">Fulfil Offer</button>
       <div class="info small" id="collection-offers-status"></div>
     </div>
 
     <div class="box">
       <h1>My Offers</h1>
+
       <button class="action" id="btn-load-my-offers">Load My Active Offers</button>
+
       <label for="my-offers" class="small" style="margin-top:.5rem;">My Active Offers</label>
       <select id="my-offers" size="8"></select>
+
       <button class="action" id="btn-cancel-offer">Cancel Selected Offer</button>
+
       <label for="withdraw-offer-id" class="small" style="margin-top:.75rem;">Fulfilled Offers (NFT Ready)</label>
       <select id="withdraw-offer-id" size="5"></select>
+
       <button class="action" id="btn-withdraw-nft">Withdraw NFT</button>
       <div class="info small" id="my-offers-status"></div>
     </div>
@@ -171,7 +248,7 @@
   </div>
 
   <script type="module">
-    import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.esm.min.js';
+import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.esm.min.js';
 
     const ESCROW_ADDRESS = "0xD08bCA21e3Bf4E4bB4D96656669896EAbF7a43f7";
     const REQUIRED_CHAIN_ID = 14601;
@@ -199,7 +276,11 @@
       "function isApprovedForAll(address,address) view returns (bool)",
       "function approve(address,uint256)",
       "function setApprovalForAll(address,bool)",
-      "function tokenURI(uint256) view returns (string)"
+      "function tokenURI(uint256) view returns (string)",
+
+      /* ===== ADDED: contract name() so we can show collection name in Create Offer ===== */
+      "function name() view returns (string)"
+      /* ============================================================================ */
     ];
 
     const SONIC_PARAMS = [{
@@ -213,9 +294,42 @@
     let provider, signer, account;
     let escrowRead, escrowWrite;
 
-    const el = (id) => document.getElementById(id);
+    const el = id => document.getElementById(id);
+
+    /* ===== ADDED: Debounced collection-name loader for Create Offer ===== */
+    let offerNameTimer = null;
+
+    async function loadOfferCollectionName() {
+      const out = el('offer-collection-name');
+      if (!out) return;
+
+      const addr = el('offer-collection').value.trim();
+      if (!ethers.utils.isAddress(addr)) {
+        out.textContent = 'Collection name: –';
+        return;
+      }
+
+      out.textContent = 'Collection name: Loading…';
+
+      try {
+        const rpcProvider = provider || new ethers.providers.JsonRpcProvider(SONIC_RPC);
+        const nft = new ethers.Contract(addr, ERC721_ABI, rpcProvider);
+        const name = await nft.name();
+        out.textContent = `Collection name: ${name}`;
+      } catch (err) {
+        // If addr is not a contract / not ERC721 / call fails:
+        out.textContent = 'Collection name: (unavailable)';
+      }
+    }
+
+    function scheduleOfferCollectionNameLoad() {
+      clearTimeout(offerNameTimer);
+      offerNameTimer = setTimeout(loadOfferCollectionName, 350);
+    }
+    /* ===================================================================== */
 
     async function loadPreviewImage() {
+      console.log("loadPreviewImage triggered");
       const addr = el('browse-collection').value.trim();
       if (!ethers.utils.isAddress(addr)) {
         el('nft-preview').style.display = 'none';
@@ -227,18 +341,19 @@
           ERC721_ABI,
           provider || new ethers.providers.JsonRpcProvider(SONIC_RPC)
         );
+
         let uri = await nft.tokenURI(1);
         if (uri.startsWith("ipfs://")) {
           uri = "https://ipfs.io/ipfs/" + uri.replace("ipfs://", "");
         }
         const meta = await fetch(uri).then(r => r.json());
-        let img = meta.image || "";
-        if (img.startsWith("ipfs://")) {
+        let img = meta.image;
+        if (img && img.startsWith("ipfs://")) {
           img = "https://ipfs.io/ipfs/" + img.replace("ipfs://", "");
         }
         const imgEl = el('nft-preview');
         imgEl.src = img;
-        imgEl.style.display = img ? 'block' : 'none';
+        imgEl.style.display = 'block';
       } catch (err) {
         console.error("Preview load failed:", err);
         el('nft-preview').style.display = 'none';
@@ -325,12 +440,16 @@
       }
 
       escrowWrite = new ethers.Contract(ESCROW_ADDRESS, ESCROW_ABI, signer);
-      escrowRead = new ethers.Contract(ESCROW_ADDRESS, ESCROW_ABI, provider);
+      escrowRead  = new ethers.Contract(ESCROW_ADDRESS, ESCROW_ABI, provider);
 
       el('wallet-button').textContent = '…' + account.slice(-4);
       el('wallet-status').textContent = 'Connected';
+
       await refreshUserStats();
       await loadFulfilledOffers();
+
+      // If user already typed a CA before connecting, refresh name using the new provider
+      scheduleOfferCollectionNameLoad();
     }
 
     async function refreshUserStats() {
@@ -599,7 +718,13 @@
     el('btn-load-my-offers').onclick = loadMyOffers;
     el('btn-cancel-offer').onclick = cancelOffer;
     el('btn-withdraw-nft').onclick = withdrawNFT;
+
+    // Existing preview image listener
     el('browse-collection').addEventListener('input', loadPreviewImage);
+
+    // ===== ADDED: Collection-name lookup listener (Create Offer) =====
+    el('offer-collection').addEventListener('input', scheduleOfferCollectionNameLoad);
+    // ===============================================================
 
     window.addEventListener('load', async () => {
       await rpcReportsCorrectChain();
@@ -607,57 +732,5 @@
       ticker.classList.add('running');
     });
   </script>
-
-  <!-- ================= ADDED: Whitelist popup (modal) ================= -->
-  <div id="wl-backdrop" class="wl-backdrop" aria-hidden="true">
-    <div class="wl-modal" role="dialog" aria-modal="true" aria-labelledby="wl-title" aria-describedby="wl-desc">
-      <header>
-        <h3 id="wl-title" style="margin:0">Whitelisted NFT Collections</h3>
-        <button type="button" class="wl-x" aria-label="Close">&times;</button>
-      </header>
-      <div class="wl-content">
-        <p id="wl-desc" style="margin:0 0 .75rem 0">
-          This file lists <b>name</b>, <b>CA</b> (contract address), and <b>image</b> (ArDrive link).
-        </p>
-        <p style="margin:0">
-          <a id="wl-link" href="#" target="_blank" rel="noopener" style="color:var(--neon);text-decoration:none">
-            Open whitelist file ↗
-          </a>
-        </p>
-      </div>
-      <div class="wl-footer">
-        <button type="button" class="wl-x" aria-label="Close">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    // Minimal script to open/close modal without touching your existing logic.
-    (function(){
-      // Set this to your whitelist file (JSON/CSV you maintain).
-      const WL_URL = './whitelist.csv'; // <-- change this path
-      const openBtn  = document.getElementById('btn-open-whitelist');
-      const backdrop = document.getElementById('wl-backdrop');
-      const link     = document.getElementById('wl-link');
-      link.href = WL_URL;
-
-      function openModal(){
-        backdrop.classList.add('open');
-        backdrop.setAttribute('aria-hidden','false');
-        document.addEventListener('keydown', onEsc);
-      }
-      function closeModal(){
-        backdrop.classList.remove('open');
-        backdrop.setAttribute('aria-hidden','true');
-        document.removeEventListener('keydown', onEsc);
-      }
-      function onEsc(e){ if(e.key === 'Escape') closeModal(); }
-
-      openBtn.addEventListener('click', openModal);
-      backdrop.addEventListener('click', (e)=>{ if(e.target === backdrop) closeModal(); });
-      backdrop.querySelectorAll('.wl-x').forEach(b => b.addEventListener('click', closeModal));
-    })();
-  </script>
-  <!-- =================================================================== -->
 </body>
 </html>
