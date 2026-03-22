@@ -176,7 +176,7 @@
   </div>
 
   <div class="brand">NFT Orderbook</div>
-  <button id="wallet-button">Connect</button>
+  <button id="wallet-button">Connect Wallet</button>
 
   <div class="lower-section">
     <div class="box">
@@ -234,7 +234,6 @@
     </div>
   </div>
 
-  <!-- Added footer link -->
   <div style="text-align:center; margin-top:2rem; opacity:0.8;">
     <a href="https://testnet-6qu.pages.dev/" target="_blank" style="color:var(--neon); text-decoration:none;">
       InFlow
@@ -287,8 +286,9 @@
 
     const el = id => document.getElementById(id);
 
-    /* ===== Cache: collection address -> name (used for Active Offers display) ===== */
+    /* ===== Cache: collection address -> name (shared for Create/Active/My Offers) ===== */
     const collectionNameCache = new Map();
+
     async function getCollectionName(addr) {
       if (!ethers.utils.isAddress(addr)) return null;
       const key = addr.toLowerCase();
@@ -307,7 +307,6 @@
         return fallback;
       }
     }
-    /* =========================================================================== */
 
     /* ===== Create Offer: Debounced collection-name loader ===== */
     let offerNameTimer = null;
@@ -331,7 +330,6 @@
       clearTimeout(offerNameTimer);
       offerNameTimer = setTimeout(loadOfferCollectionName, 350);
     }
-    /* ===================================================================== */
 
     /* ===== Offers by Collection: Debounced auto-load offers on input/paste ===== */
     let browseOffersTimer = null;
@@ -355,10 +353,9 @@
           return;
         }
 
-        await loadCollectionOffers(); // uses browse-collection value internally
+        await loadCollectionOffers();
       }, 300);
     }
-    /* ======================================================================== */
 
     async function loadPreviewImage() {
       const addr = el('browse-collection').value.trim();
@@ -478,9 +475,8 @@ async function trySwitchOrAdd() {
 
       await refreshUserStats();
       await loadFulfilledOffers();
-      await loadMyOffers();
+      await loadMyOffers();                 // auto-load My Active Offers
 
-      // If fields already contain values, refresh derived displays
       scheduleOfferCollectionNameLoad();
       scheduleBrowseOffersLoad();
     }
@@ -552,15 +548,12 @@ async function trySwitchOrAdd() {
         await tx.wait();
         el('offer-status').textContent = 'Offer created';
         await refreshUserStats();
-        await loadMyOffers();
+        await loadMyOffers(); // refresh list to show new offer (with name)
       } catch (e) {
         el('offer-status').textContent = e.message || 'Create failed';
       }
     }
 
-    /* ============================================================
-       UPDATED: Active Offers option text now includes contract name
-       ============================================================ */
     async function loadCollectionOffers() {
       if (!escrowRead) {
         el('collection-offers-status').textContent = 'Connect wallet first';
@@ -577,7 +570,6 @@ async function trySwitchOrAdd() {
       const sel = el('collection-offers');
       sel.innerHTML = '';
 
-      // NEW: resolve collection name once (cached) for display
       const collectionName = await getCollectionName(nft);
 
       try {
@@ -597,7 +589,6 @@ async function trySwitchOrAdd() {
             ? 'no expiry'
             : new Date(Number(offer.expiry) * 1000).toLocaleString();
 
-          // UPDATED TEXT: includes collectionName in addition to existing fields
           opt.textContent = `#${id} — ${amount} S — ${collectionName} — expiry: ${expiry}`;
           sel.appendChild(opt);
         }
@@ -672,31 +663,50 @@ async function trySwitchOrAdd() {
 
         el('collection-offers-status').textContent = 'Offer fulfilled';
         await refreshUserStats();
-        await loadCollectionOffers();   // keeps list updated (now includes name too)
+        await loadCollectionOffers();
         await loadFulfilledOffers();
       } catch (e) {
         el('collection-offers-status').textContent = e.message || 'Fulfil failed';
       }
     }
 
+    /* ============================================================
+       UPDATED: My Active Offers now includes contract name per offer
+       ============================================================ */
     async function loadMyOffers() {
       if (!escrowRead || !account) {
         el('my-offers-status').textContent = 'Connect wallet first';
         return;
       }
+
       el('my-offers-status').textContent = 'Loading…';
       const sel = el('my-offers');
       sel.innerHTML = '';
+
       try {
         const ids = await escrowRead.getActiveOffersByBuyer(account);
         if (!ids.length) {
           el('my-offers-status').textContent = 'No active offers';
           return;
         }
+
+        // Fetch offers first
+        const offers = [];
         for (const id of ids) {
           const offer = await escrowRead.getOffer(id);
+          offers.push({ id: id.toString(), offer });
+        }
+
+        // Prime name cache for unique collections (parallel)
+        const uniqueCollections = Array.from(new Set(offers.map(x => (x.offer.nftContract || '').toLowerCase())))
+          .filter(a => ethers.utils.isAddress(a));
+        await Promise.all(uniqueCollections.map(a => getCollectionName(a)));
+
+        // Render options with name included
+        for (const { id, offer } of offers) {
           const opt = document.createElement('option');
-          opt.value = id.toString();
+          opt.value = id;
+
           const amount = ethers.utils.formatEther(offer.amount);
 
           let expiry;
@@ -709,9 +719,12 @@ async function trySwitchOrAdd() {
               ? `expired (${new Date(ts).toLocaleString()})`
               : new Date(ts).toLocaleString();
           }
-          opt.textContent = `#${id} — ${amount} S — expiry: ${expiry}`;
+
+          const name = await getCollectionName(offer.nftContract);
+          opt.textContent = `#${id} — ${amount} S — ${name} — expiry: ${expiry}`;
           sel.appendChild(opt);
         }
+
         el('my-offers-status').textContent = `Loaded ${ids.length} offers`;
       } catch (e) {
         el('my-offers-status').textContent = e.message || 'Load failed';
@@ -760,6 +773,7 @@ async function trySwitchOrAdd() {
         el('my-offers-status').textContent = 'NFT withdrawn';
         await refreshUserStats();
         await loadFulfilledOffers();
+        await loadMyOffers();
       } catch (e) {
         el('my-offers-status').textContent = e.message || 'Withdraw failed';
       }
@@ -773,7 +787,7 @@ async function trySwitchOrAdd() {
     el('btn-cancel-offer').onclick = cancelOffer;
     el('btn-withdraw-nft').onclick = withdrawNFT;
 
-    // Offers by Collection: auto preview + auto load offers on input/paste
+    // Offers by Collection: auto preview + auto load offers
     el('browse-collection').addEventListener('input', () => {
       loadPreviewImage();
       scheduleBrowseOffersLoad();
