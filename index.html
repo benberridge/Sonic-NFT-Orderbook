@@ -721,7 +721,7 @@ async function trySwitchOrAdd() {
           }
 
           const name = await getCollectionName(offer.nftContract);
-          opt.textContent = `#${id} — ${name} — ${amount} S — expiry: ${expiry}`;
+          opt.textContent = `#${name} — ${amount} S — expiry: ${expiry}`;
           sel.appendChild(opt);
         }
 
