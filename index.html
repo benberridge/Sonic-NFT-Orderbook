@@ -181,14 +181,17 @@
   <div class="lower-section">
     <div class="box">
       <h1>Create Offer</h1>
+
       <label for="offer-collection">NFT Collection</label>
       <input id="offer-collection" placeholder="0x... (NFT collection)"/>
+
       <label for="offer-amount">Offer Amount (S)</label>
       <input id="offer-amount" type="number" min="0" step="0.0001" placeholder="Amount in S"/>
+
       <label for="offer-expiry">Expiry (hours, 0 = no expiry)</label>
       <input id="offer-expiry" type="number" min="0" step="1" placeholder="e.g. 24 for 1 day"/>
-      <div class="info small" id="offer-fee-preview">Fee: – Total to send: –</div>
 
+      <div class="info small" id="offer-fee-preview">Fee: – Total to send: –</div>
       <div class="info small" id="offer-collection-name">Collection name: –</div>
 
       <button class="action" id="btn-preview-fee">Preview Fee</button>
@@ -198,10 +201,9 @@
 
     <div class="box">
       <h1>Offers by Collection</h1>
+
       <label for="browse-collection">NFT Collection</label>
       <input id="browse-collection" placeholder="0x... (NFT collection)"/>
-
-      <!-- REMOVED: Load Active Offers button -->
 
       <div class="info" style="margin-top:1rem;">
         <img id="nft-preview" style="max-width:100%; border-radius:12px; display:none;" />
@@ -218,8 +220,6 @@
     </div>
 <div class="box">
       <h1>My Offers</h1>
-
-      <!-- REMOVED: Load My Active Offers button (auto-load on connect) -->
 
       <label for="my-offers" class="small" style="margin-top:.5rem;">My Active Offers</label>
       <select id="my-offers" size="8"></select>
@@ -287,6 +287,28 @@
 
     const el = id => document.getElementById(id);
 
+    /* ===== Cache: collection address -> name (used for Active Offers display) ===== */
+    const collectionNameCache = new Map();
+    async function getCollectionName(addr) {
+      if (!ethers.utils.isAddress(addr)) return null;
+      const key = addr.toLowerCase();
+      if (collectionNameCache.has(key)) return collectionNameCache.get(key);
+
+      try {
+        const rpcProvider = provider || new ethers.providers.JsonRpcProvider(SONIC_RPC);
+        const nft = new ethers.Contract(addr, ERC721_ABI, rpcProvider);
+        const name = await nft.name();
+        const safeName = (name && String(name).trim()) ? String(name).trim() : "(unavailable)";
+        collectionNameCache.set(key, safeName);
+        return safeName;
+      } catch {
+        const fallback = "(unavailable)";
+        collectionNameCache.set(key, fallback);
+        return fallback;
+      }
+    }
+    /* =========================================================================== */
+
     /* ===== Create Offer: Debounced collection-name loader ===== */
     let offerNameTimer = null;
 
@@ -301,21 +323,15 @@
       }
 
       out.textContent = 'Collection name: Loading…';
-
-      try {
-        const rpcProvider = provider || new ethers.providers.JsonRpcProvider(SONIC_RPC);
-        const nft = new ethers.Contract(addr, ERC721_ABI, rpcProvider);
-        const name = await nft.name();
-        out.textContent = `Collection name: ${name}`;
-      } catch {
-        out.textContent = 'Collection name: (unavailable)';
-      }
+      const name = await getCollectionName(addr);
+      out.textContent = `Collection name: ${name ?? '(unavailable)'}`;
     }
 
     function scheduleOfferCollectionNameLoad() {
       clearTimeout(offerNameTimer);
       offerNameTimer = setTimeout(loadOfferCollectionName, 350);
     }
+    /* ===================================================================== */
 
     /* ===== Offers by Collection: Debounced auto-load offers on input/paste ===== */
     let browseOffersTimer = null;
@@ -462,8 +478,6 @@ async function trySwitchOrAdd() {
 
       await refreshUserStats();
       await loadFulfilledOffers();
-
-      // Auto-load My Offers (your desired behavior)
       await loadMyOffers();
 
       // If fields already contain values, refresh derived displays
@@ -544,6 +558,9 @@ async function trySwitchOrAdd() {
       }
     }
 
+    /* ============================================================
+       UPDATED: Active Offers option text now includes contract name
+       ============================================================ */
     async function loadCollectionOffers() {
       if (!escrowRead) {
         el('collection-offers-status').textContent = 'Connect wallet first';
@@ -559,6 +576,9 @@ async function trySwitchOrAdd() {
       el('collection-offers-status').textContent = 'Loading…';
       const sel = el('collection-offers');
       sel.innerHTML = '';
+
+      // NEW: resolve collection name once (cached) for display
+      const collectionName = await getCollectionName(nft);
 
       try {
         const ids = await escrowRead.getActiveOffersByCollection(nft);
@@ -577,7 +597,8 @@ async function trySwitchOrAdd() {
             ? 'no expiry'
             : new Date(Number(offer.expiry) * 1000).toLocaleString();
 
-          opt.textContent = `#${id} — ${amount} S — expiry: ${expiry}`;
+          // UPDATED TEXT: includes collectionName in addition to existing fields
+          opt.textContent = `#${id} — ${amount} S — ${collectionName} — expiry: ${expiry}`;
           sel.appendChild(opt);
         }
 
@@ -651,7 +672,7 @@ async function trySwitchOrAdd() {
 
         el('collection-offers-status').textContent = 'Offer fulfilled';
         await refreshUserStats();
-        await loadCollectionOffers();   // keeps the list updated
+        await loadCollectionOffers();   // keeps list updated (now includes name too)
         await loadFulfilledOffers();
       } catch (e) {
         el('collection-offers-status').textContent = e.message || 'Fulfil failed';
