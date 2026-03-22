@@ -589,7 +589,7 @@ async function trySwitchOrAdd() {
             ? 'no expiry'
             : new Date(Number(offer.expiry) * 1000).toLocaleString();
 
-          opt.textContent = `${collectionName} — ${amount} S — ${expiry}`;
+          opt.textContent = `${collectionName} — ${amount} S — expiry: ${expiry}`;
           sel.appendChild(opt);
         }
 
@@ -610,7 +610,7 @@ async function trySwitchOrAdd() {
           if (offer.status === 3) {
             const opt = document.createElement('option');
             opt.value = id.toString();
-            opt.textContent = `Offer #${id} — ${collectionName} — NFT ready to withdraw`;
+            opt.textContent = `Offer #${id} — NFT ready to withdraw`;
             sel.appendChild(opt);
           }
         }
