@@ -4,7 +4,7 @@
   <meta charset="UTF-8"/>
   <!--
     CSP UPDATED:
-    - Adds img-src so preview images can load (was blocked by default-src 'self')
+    - Adds img-src so preview images can load
     - Adds connect-src for metadata JSON fetching from IPFS gateways + Arweave/ArDrive
   -->
   <meta http-equiv="Content-Security-Policy" content="
@@ -95,6 +95,11 @@
       color: var(--neon);
       box-shadow: 0 0 4px rgba(0,255,225,0.04);
     }
+    .stat-pill.warn {
+      color: #ffcf5a;
+      border-color: rgba(255,207,90,0.2);
+      box-shadow: 0 0 6px rgba(255,207,90,0.06);
+    }
     .brand {
       text-align: center;
       font-size: 2.3rem;
@@ -162,6 +167,7 @@
       transition: border var(--transition);
     }
     input:focus, select:focus { outline: none; border-color: var(--neon); }
+
     button.action {
       padding: .6rem .9rem;
       border: 2px solid var(--neon);
@@ -184,6 +190,41 @@
       font-size: 0.8rem;
       opacity: 0.8;
     }
+
+    /* ===== Custom name-only dropdown ===== */
+    .dd-wrap { position: relative; width: 100%; }
+    .dd-list {
+      position: absolute;
+      top: calc(100% - 8px);
+      left: 0;
+      right: 0;
+      z-index: 2500;
+      display: none;
+      max-height: 220px;
+      overflow: auto;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(10,10,31,0.92);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 10px 40px rgba(0,0,0,0.55);
+      padding: 6px;
+    }
+    .dd-item {
+      padding: 10px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text-light);
+    }
+    .dd-item:hover { background: rgba(0,255,225,0.10); }
+    .dd-hint {
+      padding: 8px 10px;
+      opacity: 0.75;
+      font-size: 0.85rem;
+    }
+
     @media (max-width: 600px) {
       .ticker { animation-duration: 52s; font-size: 0.85rem; }
       body { padding-top: calc(var(--banner-h) + 12px); }
@@ -192,15 +233,17 @@
 </head>
 
 <body>
-  <!-- Shared datalist for BOTH NFT Collection inputs -->
-  <datalist id="recorded-collections"></datalist>
-
   <div class="top-banner">
     <div class="ticker" id="rolling-stats">
       <span class="stat-pill">Network: Sonic Testnet</span>
       <span class="stat-pill">RPC: <span id="rpc-status">Checking…</span></span>
       <span class="stat-pill">Wallet: <span id="wallet-status">Disconnected</span></span>
       <span class="stat-pill">My offers: <span id="user-offer-stats">–</span></span>
+
+      <!-- NEW warning pill in the scrolling banner -->
+      <span class="stat-pill warn">
+        Warning: This is an experimental site — functionality can’t be guaranteed. Use at your own risk.
+      </span>
     </div>
   </div>
 
@@ -212,9 +255,11 @@
       <h1>Create Offer</h1>
 
       <label for="offer-collection">NFT Collection</label>
-      <input id="offer-collection"
-             placeholder="0x... (NFT collection)"
-             list="recorded-collections"/>
+      <!-- Custom dropdown (name-only list) -->
+      <div class="dd-wrap">
+        <input id="offer-collection" placeholder="Paste 0x... or click to pick a collection"/>
+        <div class="dd-list" id="offer-collection-dd"></div>
+      </div>
 
       <label for="offer-amount">Offer Amount (S)</label>
       <input id="offer-amount" type="number" min="0" step="0.0001" placeholder="Amount in S"/>
@@ -234,9 +279,11 @@
       <h1>Offers by Collection</h1>
 
       <label for="browse-collection">NFT Collection</label>
-      <input id="browse-collection"
-             placeholder="(blank = all active) or 0x..."
-             list="recorded-collections"/>
+      <!-- Custom dropdown (name-only list) -->
+      <div class="dd-wrap">
+        <input id="browse-collection" placeholder="Blank = all active, or click to pick a collection"/>
+        <div class="dd-list" id="browse-collection-dd"></div>
+      </div>
 
       <div class="info" style="margin-top:1rem;">
         <img id="nft-preview" style="max-width:100%; border-radius:12px; display:none;" />
@@ -277,10 +324,10 @@
   <script type="module">
     import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.esm.min.js';
 
-    // UPDATED to your deployed contract address
+    // Deployed contract address (Sonic Testnet)
     const ESCROW_ADDRESS = "0x91B2b53B51A09bBf0C256D19Db78feE101F1c9B6";
 
-    // Sonic testnet settings match Sonic docs. [1](https://www.datawallet.com/crypto/get-sonic-faucet-testnet-tokens)
+    // Sonic testnet parameters. [1](https://www.datawallet.com/crypto/get-sonic-faucet-testnet-tokens)
     const REQUIRED_CHAIN_ID = 14601;
     const SONIC_CHAIN_ID_HEX = '0x3909';
     const SONIC_RPC = 'https://rpc.testnet.soniclabs.com';
@@ -359,18 +406,13 @@
     }
 
     /* ============================================================
-       Dropdown list from on-chain recorded collections (if supported)
+       Recorded collections (from contract registry)
        ============================================================ */
     let recordedCollections = []; // [{ addr, name }]
-    const recordedDatalistId = "recorded-collections";
 
     async function loadRecordedCollections() {
       if (!escrowRead || !hasCollectionRegistry) return;
 
-      const dl = el(recordedDatalistId);
-      if (!dl) return;
-
-      dl.innerHTML = "";
       recordedCollections = [];
 
       try {
@@ -387,18 +429,15 @@
           }
         }
 
-        for (const c of recordedCollections) {
-          const opt = document.createElement("option");
-          opt.value = c.addr;   // selection fills address
-          opt.label = c.name;   // shows name (browser support varies)
-          dl.appendChild(opt);
-        }
+        // Refresh the custom dropdowns
+        refreshDropdown("offer-collection", "offer-collection-dd");
+        refreshDropdown("browse-collection", "browse-collection-dd");
       } catch (e) {
         console.warn("loadRecordedCollections failed:", e);
       }
     }
 
-    /* ===== Parsing helper ===== */
+    /* ===== Helpers: address parsing ===== */
     function extractAddress(text) {
       if (!text) return "";
       const m = String(text).match(/0x[a-fA-F0-9]{40}/);
@@ -415,6 +454,101 @@
         return extracted;
       }
       return raw;
+    }
+
+    /* ============================================================
+       Custom dropdown: show NAME ONLY, but store address in data-attr
+       - Click input => dropdown shows
+       - Type => filters by name substring
+       - Click name => input becomes the address
+       ============================================================ */
+    function refreshDropdown(inputId, ddId) {
+      const input = el(inputId);
+      const dd = el(ddId);
+      if (!input || !dd) return;
+
+      // Build a name-only list; keep addr in data attribute
+      // If the same name appears multiple times, we still show just name,
+      // and attach the address in title (hover) to reduce confusion.
+      const filter = (input.value || "").trim().toLowerCase();
+
+      // If user is typing/pasting an address, don't spam suggestions
+      const isAddressLike = /^0x[a-fA-F0-9]{0,40}$/.test(filter) || filter.length > 30;
+
+      const items = !isAddressLike
+        ? recordedCollections.filter(x => !filter || (x.name || "").toLowerCase().includes(filter))
+        : [];
+
+      dd.innerHTML = "";
+
+      if (!hasCollectionRegistry) {
+        dd.innerHTML = `<div class="dd-hint">Collection list unavailable on this contract.</div>`;
+        return;
+      }
+
+      if (!items.length) {
+        dd.innerHTML = `<div class="dd-hint">${isAddressLike ? "Paste an address to search." : "No matching collections."}</div>`;
+        return;
+      }
+
+      for (const x of items) {
+        const div = document.createElement("div");
+        div.className = "dd-item";
+        div.textContent = x.name || "(unavailable)";
+        div.dataset.addr = x.addr;
+        div.title = x.addr; // hover shows address, but visible text is name-only
+        dd.appendChild(div);
+      }
+    }
+
+    function showDropdown(ddId) {
+      const dd = el(ddId);
+      if (!dd) return;
+      dd.style.display = "block";
+    }
+
+    function hideDropdown(ddId) {
+      const dd = el(ddId);
+      if (!dd) return;
+      dd.style.display = "none";
+    }
+
+    function attachDropdownBehavior(inputId, ddId, onPicked) {
+      const input = el(inputId);
+      const dd = el(ddId);
+      if (!input || !dd) return;
+
+      // Open on focus/click
+      const open = () => {
+        refreshDropdown(inputId, ddId);
+        showDropdown(ddId);
+      };
+
+      input.addEventListener("focus", open);
+      input.addEventListener("click", open);
+
+      // Filter as the user types (name filtering)
+      input.addEventListener("input", () => {
+        refreshDropdown(inputId, ddId);
+        showDropdown(ddId);
+        onPicked?.(null); // means "manual typing" (e.g. pasted address)
+      });
+
+      // Use mousedown so selection happens before input blur
+      dd.addEventListener("mousedown", (e) => {
+        const target = e.target.closest(".dd-item");
+        if (!target) return;
+
+        const addr = target.dataset.addr;
+        if (addr) {
+          input.value = addr;              // auto populate address
+          hideDropdown(ddId);
+          onPicked?.(addr);
+        }
+      });
+
+      // Close shortly after blur to allow click selection
+      input.addEventListener("blur", () => setTimeout(() => hideDropdown(ddId), 120));
     }
 
     /* ===== Create Offer: Debounced collection-name loader ===== */
@@ -442,23 +576,16 @@
     /* ============================================================
        Image preview (more reliable): IPFS + Arweave/ArDrive support
        ============================================================ */
-
     const IPFS_GATEWAYS = [
       "https://ipfs.io/ipfs/",
       "https://cloudflare-ipfs.com/ipfs/",
       "https://gateway.pinata.cloud/ipfs/"
     ];
 
-    function isLikelyIpfs(uri) {
-      return typeof uri === "string" && uri.startsWith("ipfs://");
-    }
-
-    function isLikelyAr(uri) {
-      return typeof uri === "string" && uri.startsWith("ar://");
-    }
+    function isLikelyIpfs(uri) { return typeof uri === "string" && uri.startsWith("ipfs://"); }
+    function isLikelyAr(uri) { return typeof uri === "string" && uri.startsWith("ar://"); }
 
     function normalizeArUri(uri) {
-      // ar://<txid> -> https://arweave.net/<txid>
       return "https://arweave.net/" + uri.replace("ar://", "");
     }
 
@@ -470,24 +597,17 @@
     function normalizeResourceCandidates(uri) {
       if (!uri || typeof uri !== "string") return [];
       const u = uri.trim();
-
-      // data: URIs are usable directly
       if (u.startsWith("data:")) return [u];
-
       if (isLikelyIpfs(u)) return ipfsToGateways(u);
       if (isLikelyAr(u)) return [normalizeArUri(u)];
-
-      // Some metadata uses ipfs.io/ipfs/... already
-      // Some use arweave.net / ar-io.net / ardrive.io directly
-      return [u];
+      return [u]; // includes arweave.net, ardrive.io, etc.
     }
 
-    async function fetchWithTimeout(url, ms = 8000) {
+    async function fetchWithTimeout(url, ms = 9000) {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), ms);
       try {
-        const res = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
-        return res;
+        return await fetch(url, { signal: ctrl.signal, cache: "no-store" });
       } finally {
         clearTimeout(t);
       }
@@ -499,7 +619,6 @@
 
       for (const url of candidates) {
         try {
-          // Handle data:application/json;base64,... quickly
           if (url.startsWith("data:")) {
             const comma = url.indexOf(",");
             if (comma === -1) continue;
@@ -509,7 +628,6 @@
               const jsonText = atob(dataPart);
               return JSON.parse(jsonText);
             } else {
-              // URL-encoded or plain
               return JSON.parse(decodeURIComponent(dataPart));
             }
           }
@@ -520,24 +638,12 @@
           return JSON.parse(text);
         } catch (e) {
           lastErr = e;
-          continue;
         }
       }
       throw lastErr || new Error("No working metadata URL");
     }
 
-    async function findFirstWorkingImageUrl(uri) {
-      const candidates = normalizeResourceCandidates(uri);
-      for (const url of candidates) {
-        // If data: or https: just try it as image src
-        // We don't prefetch to avoid CORS; browser will load image directly
-        return url;
-      }
-      return null;
-    }
-
     async function getFirstTokenUriThatWorks(nftContract) {
-      // Try a few common token IDs to improve preview reliability
       const tries = [1, 0, 2, 10, 100];
       for (const tid of tries) {
         try {
@@ -572,10 +678,8 @@
           return;
         }
 
-        // Fetch metadata JSON with fallbacks (IPFS gateways + Arweave)
         const meta = await fetchFirstWorkingJson(tokenUri);
 
-        // Find image field variants
         const imageField = meta.image || meta.image_url || meta.imageURI || meta.imageUri || meta.image_data;
         if (!imageField) {
           imgEl.style.display = 'none';
@@ -583,15 +687,8 @@
           return;
         }
 
-        // If image itself is ipfs:// or ar://, normalize
         const imgCandidates = normalizeResourceCandidates(String(imageField));
-        let finalImgUrl = null;
-
-        // Prefer first candidate; if ipfs, candidates are gateways
-        for (const c of imgCandidates) {
-          finalImgUrl = c;
-          break;
-        }
+        const finalImgUrl = imgCandidates[0];
 
         if (!finalImgUrl) {
           imgEl.style.display = 'none';
@@ -599,15 +696,8 @@
           return;
         }
 
-        // Optional: handle ardrive "ar://" is already normalized above.
-        // For ardrive.io URLs, we use them as-is.
-
-        imgEl.onerror = () => {
-          imgEl.style.display = "none";
-        };
-        imgEl.onload = () => {
-          imgEl.style.display = "block";
-        };
+        imgEl.onerror = () => { imgEl.style.display = "none"; };
+        imgEl.onload = () => { imgEl.style.display = "block"; };
 
         imgEl.src = finalImgUrl;
         imgEl.style.display = 'block';
@@ -618,7 +708,7 @@
       }
     }
 
-    /* ===== Offers by Collection: Debounced auto-load offers on input/paste ===== */
+    /* ===== Offers by Collection: Debounced load ===== */
     let browseOffersTimer = null;
 
     function scheduleBrowseOffersLoad() {
@@ -627,7 +717,6 @@
         const input = el('browse-collection');
         const val = (input.value || "").trim();
 
-        // If empty, show ALL active offers
         if (!val) {
           await loadAllActiveOffers();
           return;
@@ -731,13 +820,9 @@
       escrowWrite = new ethers.Contract(ESCROW_ADDRESS, ESCROW_ABI, signer);
       escrowRead  = new ethers.Contract(ESCROW_ADDRESS, ESCROW_ABI, provider);
 
-      // Feature detection: registry + createOffer overload
-      try {
-        await escrowRead.getCollectionCount();
-        hasCollectionRegistry = true;
-      } catch {
-        hasCollectionRegistry = false;
-      }
+      // Feature detection
+      try { await escrowRead.getCollectionCount(); hasCollectionRegistry = true; }
+      catch { hasCollectionRegistry = false; }
 
       try {
         escrowWrite.interface.getFunction("createOffer(address,uint256,uint64,string)");
@@ -753,16 +838,14 @@
       await loadFulfilledOffers();
       await loadMyOffers();
 
-      // Load recorded collections only if the contract supports it
       if (hasCollectionRegistry) await loadRecordedCollections();
       else {
-        const dl = el("recorded-collections");
-        if (dl) dl.innerHTML = "";
+        recordedCollections = [];
+        refreshDropdown("offer-collection", "offer-collection-dd");
+        refreshDropdown("browse-collection", "browse-collection-dd");
       }
 
-      // Load ALL active offers immediately on connect
       await loadAllActiveOffers();
-
       scheduleOfferCollectionNameLoad();
     }
 
@@ -825,37 +908,26 @@
         const hours = Number(expiryStr);
         const expirySeconds = ethers.BigNumber.from(Math.max(0, Math.floor(hours * 3600)));
 
-        // Fetch name for recording (if available)
         const name = await getCollectionName(nft);
         const recordName = (name && name !== "(unavailable)") ? name : "";
 
         el('offer-status').textContent = 'Sending transaction…';
 
-        // Prefer overload; fallback to 3-arg if not supported
         let tx;
         if (hasCreateOfferWithName) {
           tx = await escrowWrite["createOffer(address,uint256,uint64,string)"](
-            nft,
-            amountWei,
-            expirySeconds,
-            recordName,
-            { value: totalWei }
+            nft, amountWei, expirySeconds, recordName, { value: totalWei }
           );
         } else {
           tx = await escrowWrite.createOffer(
-            nft,
-            amountWei,
-            expirySeconds,
-            { value: totalWei }
+            nft, amountWei, expirySeconds, { value: totalWei }
           );
         }
 
         await tx.wait();
         el('offer-status').textContent = 'Offer created';
 
-        // Refresh dropdown list from contract AFTER offer created (if supported)
         if (hasCollectionRegistry) await loadRecordedCollections();
-
         await refreshUserStats();
         await loadMyOffers();
 
@@ -1076,9 +1148,7 @@
           } else {
             const ts = Number(offer.expiry) * 1000;
             const expired = Date.now() > ts;
-            expiry = expired
-              ? `expired (${new Date(ts).toLocaleString()})`
-              : new Date(ts).toLocaleString();
+            expiry = expired ? `expired (${new Date(ts).toLocaleString()})` : new Date(ts).toLocaleString();
           }
 
           const name = await getCollectionName(offer.nftContract);
@@ -1155,7 +1225,21 @@
     el('btn-cancel-offer').onclick = cancelOffer;
     el('btn-withdraw-nft').onclick = withdrawNFT;
 
-    // Offers by Collection: auto preview + auto load offers
+    // Attach dropdown behavior to both inputs
+    attachDropdownBehavior("offer-collection", "offer-collection-dd", async (addr) => {
+      // If user picked a name -> addr set; update name label
+      if (addr) await loadOfferCollectionName();
+    });
+
+    attachDropdownBehavior("browse-collection", "browse-collection-dd", async (addr) => {
+      // If user picked a name -> addr set; load preview + offers
+      if (addr) {
+        await loadPreviewImage();
+        await loadCollectionOffers();
+      }
+    });
+
+    // Also keep these behaviours for manual paste/type:
     el('browse-collection').addEventListener('input', () => {
       loadPreviewImage();
       scheduleBrowseOffersLoad();
@@ -1165,7 +1249,6 @@
       scheduleBrowseOffersLoad();
     });
 
-    // Create Offer: name lookup
     el('offer-collection').addEventListener('input', scheduleOfferCollectionNameLoad);
     el('offer-collection').addEventListener('change', scheduleOfferCollectionNameLoad);
 
