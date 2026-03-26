@@ -14,7 +14,7 @@
     font-src 'self' https://fonts.gstatic.com;
 
     connect-src 'self'
-      https://rpc.testnet.soniclabs.com
+      https://rpc.soniclabs.com
       https://ipfs.io
       https://cloudflare-ipfs.com
       https://gateway.pinata.cloud
@@ -235,7 +235,7 @@
 <body>
   <div class="top-banner">
     <div class="ticker" id="rolling-stats">
-      <span class="stat-pill">Network: Sonic Testnet</span>
+      <span class="stat-pill">Network: Sonic</span>
       <span class="stat-pill">RPC: <span id="rpc-status">Checking…</span></span>
       <span class="stat-pill">Wallet: <span id="wallet-status">Disconnected</span></span>
       <span class="stat-pill">My offers: <span id="user-offer-stats">–</span></span>
@@ -324,13 +324,12 @@
   <script type="module">
     import { ethers } from 'https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.esm.min.js';
 
-    // Deployed contract address (Sonic Testnet)
-    const ESCROW_ADDRESS = "0x91B2b53B51A09bBf0C256D19Db78feE101F1c9B6";
+    // Deployed contract address (Sonic)
+    const ESCROW_ADDRESS = "0x3eB04112393e5Ea3A04B70d887589F5e8c4c65b4";
 
-    // Sonic testnet parameters. [1](https://www.datawallet.com/crypto/get-sonic-faucet-testnet-tokens)
-    const REQUIRED_CHAIN_ID = 14601;
-    const SONIC_CHAIN_ID_HEX = '0x3909';
-    const SONIC_RPC = 'https://rpc.testnet.soniclabs.com';
+    const REQUIRED_CHAIN_ID = 146;
+    const SONIC_CHAIN_ID_HEX = '0x92';
+    const SONIC_RPC = 'https://rpc.soniclabs.com';
 
     const ESCROW_ABI = [
       "function minFee() view returns (uint256)",
@@ -368,10 +367,10 @@
 
     const SONIC_PARAMS = [{
       chainId: SONIC_CHAIN_ID_HEX,
-      chainName: 'Sonic Testnet',
+      chainName: 'Sonic',
       nativeCurrency: { name: 'S', symbol: 'S', decimals: 18 },
       rpcUrls: [SONIC_RPC],
-      blockExplorerUrls: ['https://testnet.sonicscan.org']
+      blockExplorerUrls: ['https://sonicscan.org']
     }];
 
     let provider, signer, account;
