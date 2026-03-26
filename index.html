@@ -286,6 +286,9 @@
         <img id="nft-preview" style="max-width:100%; border-radius:12px; display:none;" />
       </div>
 
+      <!-- NEW: safe preview note area (no HTML injection) -->
+      <div class="info small" id="nft-preview-note"></div>
+
       <label for="collection-offers" class="small" style="margin-top:.5rem;">Active Offers</label>
       <select id="collection-offers" size="8"></select>
 
@@ -313,7 +316,7 @@
   </div>
 
   <div style="text-align:center; margin-top:2rem; opacity:0.8;">
-    <a href="https://testnet-6qu.pages.dev/" target="_blank" style="color:var(--neon); text-decoration:none;">
+    <a href="https://testnet-6qu.pages.dev/" target="_blank" rel="noopener noreferrer" style="color:var(--neon); text-decoration:none;">
       InFlow
     </a>
   </div>
@@ -560,12 +563,9 @@
 
     /* ============================================================
        Image preview (IPFS + Arweave/ArDrive)
-       UPDATED to handle:
-       - animation_url
-       - bare CIDs (Qm... / bafy...)
-       - /ipfs/<cid>
-       AND uses tokenId 1 then tokenId 10 only
-       No new hosts are introduced; only existing gateways are used.
+       SAFE behavior:
+       - Only render static images in <img>
+       - If only animation_url exists, show a safe link to SonicScan
        ============================================================ */
     const IPFS_GATEWAYS = [
       "https://ipfs.io/ipfs/",
@@ -585,33 +585,28 @@
       return IPFS_GATEWAYS.map(g => g + path);
     }
 
-    // Strictly allow only safe URL outputs for <img src>
     function isSafeImgSrc(url) {
       if (!url || typeof url !== "string") return false;
       const u = url.trim();
       return u.startsWith("https://") || u.startsWith("data:");
     }
 
-    // UPDATED: handle bare CID + /ipfs/ paths safely (still only via existing gateways)
     function normalizeResourceCandidates(uri) {
       if (!uri || typeof uri !== "string") return [];
       const u = uri.trim();
 
-      if (u.startsWith("data:")) return [u]; // safe for <img>
+      if (u.startsWith("data:")) return [u];
 
-      // Bare CIDv0 (Qm...) or CIDv1 (bafy...)
       const isCidV0 = /^Qm[1-9A-HJ-NP-Za-km-z]{44,}$/.test(u);
       const isCidV1 = /^bafy[0-9a-z]+$/.test(u);
       if (isCidV0 || isCidV1) return IPFS_GATEWAYS.map(g => g + u);
 
-      // Relative /ipfs/<cid> or ipfs/<cid>
       if (u.startsWith("/ipfs/")) return IPFS_GATEWAYS.map(g => g + u.replace("/ipfs/", ""));
       if (u.startsWith("ipfs/"))  return IPFS_GATEWAYS.map(g => g + u.replace("ipfs/", ""));
 
       if (isLikelyIpfs(u)) return ipfsToGateways(u);
       if (isLikelyAr(u)) return [normalizeArUri(u)];
 
-      // Only keep https URLs (prevents odd schemes)
       if (u.startsWith("https://")) return [u];
 
       return [];
@@ -657,38 +652,65 @@
       throw lastErr || new Error("No working metadata URL");
     }
 
+    // SAFE: only fields intended for static images
     function extractImageField(meta) {
       if (!meta) return null;
-      return (
-        meta.image ||
-        meta.image_url ||
-        meta.imageURI ||
-        meta.imageUri ||
-        meta.image_data ||
-        meta.animation_url ||   // added for SonicScan parity
-        null
-      );
+      return meta.image || meta.image_url || meta.imageURI || meta.imageUri || meta.image_data || null;
     }
 
-    async function getPreviewImageUrlForTokenId(nft, tokenId) {
+    // Separate: interactive media field (not rendered in <img>)
+    function extractAnimationUrl(meta) {
+      if (!meta) return null;
+      return typeof meta.animation_url === "string" ? meta.animation_url : null;
+    }
+
+    async function getMetaForTokenId(nft, tokenId) {
       try {
         const tokenUri = await nft.tokenURI(tokenId);
         if (!tokenUri || !String(tokenUri).trim()) return null;
-
-        const meta = await fetchFirstWorkingJson(tokenUri);
-        const imageField = extractImageField(meta);
-        if (!imageField || !String(imageField).trim()) return null;
-
-        const imgCandidates = normalizeResourceCandidates(String(imageField));
-        const chosen = imgCandidates.length ? imgCandidates[0] : null;
-
-        // Enforce safe schemes only
-        if (!chosen || !isSafeImgSrc(chosen)) return null;
-
-        return chosen;
+        return await fetchFirstWorkingJson(tokenUri);
       } catch {
         return null;
       }
+    }
+
+    async function getPreviewImageUrlFromMeta(meta) {
+      const imageField = extractImageField(meta);
+      if (!imageField || !String(imageField).trim()) return null;
+
+      const imgCandidates = normalizeResourceCandidates(String(imageField));
+      const chosen = imgCandidates.length ? imgCandidates[0] : null;
+
+      if (!chosen || !isSafeImgSrc(chosen)) return null;
+      return chosen;
+    }
+
+    function setPreviewNote(text, linkUrl) {
+      const note = el("nft-preview-note");
+      if (!note) return;
+      note.textContent = "";
+
+      if (!text) return;
+
+      // Use safe, fixed text and safe fixed link (no metadata injection)
+      note.textContent = text;
+
+      if (linkUrl) {
+        const a = document.createElement("a");
+        a.href = linkUrl;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.style.color = "var(--neon)";
+        a.style.textDecoration = "none";
+        a.textContent = " View on SonicScan";
+        note.appendChild(document.createTextNode(" "));
+        note.appendChild(a);
+      }
+    }
+
+    function sonicScanNftUrl(contractAddr, tokenId) {
+      const a = (contractAddr || "").toLowerCase();
+      return `https://sonicscan.org/nft/${a}/${tokenId}`;
     }
 
     async function loadPreviewImage() {
@@ -697,6 +719,7 @@
 
       imgEl.style.display = 'none';
       imgEl.removeAttribute("src");
+      setPreviewNote("", null);
 
       if (!ethers.utils.isAddress(addr)) return;
 
@@ -707,9 +730,26 @@
           provider || new ethers.providers.JsonRpcProvider(SONIC_RPC)
         );
 
-        // tokenId 1 -> if no image then tokenId 10 -> stop after that
-        let finalImgUrl = await getPreviewImageUrlForTokenId(nft, 1);
-        if (!finalImgUrl) finalImgUrl = await getPreviewImageUrlForTokenId(nft, 10);
+        // REQUIRED behavior: tokenId 1 then tokenId 10 only
+        const meta1 = await getMetaForTokenId(nft, 1);
+        let finalImgUrl = meta1 ? await getPreviewImageUrlFromMeta(meta1) : null;
+
+        if (!finalImgUrl) {
+          const meta10 = await getMetaForTokenId(nft, 10);
+          finalImgUrl = meta10 ? await getPreviewImageUrlFromMeta(meta10) : null;
+
+          // If still no image but animation_url exists, show SAFE link to SonicScan
+          if (!finalImgUrl && meta10) {
+            const anim = extractAnimationUrl(meta10);
+            if (anim) {
+              setPreviewNote(
+                "This NFT appears to use interactive media (animation_url).",
+                sonicScanNftUrl(addr, 10)
+              );
+            }
+          }
+        }
+
         if (!finalImgUrl) return;
 
         imgEl.onerror = () => { imgEl.style.display = "none"; };
@@ -721,6 +761,7 @@
         console.error("Preview load failed:", err);
         imgEl.style.display = 'none';
         imgEl.removeAttribute("src");
+        setPreviewNote("", null);
       }
     }
 
@@ -836,7 +877,6 @@
       escrowWrite = new ethers.Contract(ESCROW_ADDRESS, ESCROW_ABI, signer);
       escrowRead  = new ethers.Contract(ESCROW_ADDRESS, ESCROW_ABI, provider);
 
-      // Feature detection
       try { await escrowRead.getCollectionCount(); hasCollectionRegistry = true; }
       catch { hasCollectionRegistry = false; }
 
@@ -1011,8 +1051,8 @@
         return;
       }
 
-      const nft = normalizeCollectionInput(el('browse-collection'));
-      if (!ethers.utils.isAddress(nft)) {
+      const nftAddr = normalizeCollectionInput(el('browse-collection'));
+      if (!ethers.utils.isAddress(nftAddr)) {
         el('collection-offers-status').textContent = 'Invalid collection address';
         return;
       }
@@ -1021,10 +1061,10 @@
       const sel = el('collection-offers');
       sel.innerHTML = '';
 
-      const collectionName = await getCollectionName(nft);
+      const collectionName = await getCollectionName(nftAddr);
 
       try {
-        const ids = await escrowRead.getActiveOffersByCollection(nft);
+        const ids = await escrowRead.getActiveOffersByCollection(nftAddr);
         if (!ids.length) {
           el('collection-offers-status').textContent = 'No active offers';
           return;
