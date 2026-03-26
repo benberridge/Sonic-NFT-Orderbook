@@ -240,7 +240,6 @@
       <span class="stat-pill">Wallet: <span id="wallet-status">Disconnected</span></span>
       <span class="stat-pill">My offers: <span id="user-offer-stats">–</span></span>
 
-      <!-- NEW warning pill in the scrolling banner -->
       <span class="stat-pill warn">
         Warning: This is an experimental site — functionality can’t be guaranteed. Use at your own risk.
       </span>
@@ -255,7 +254,6 @@
       <h1>Create Offer</h1>
 
       <label for="offer-collection">NFT Collection</label>
-      <!-- Custom dropdown (name-only list) -->
       <div class="dd-wrap">
         <input id="offer-collection" placeholder="Paste 0x... or click to pick a collection"/>
         <div class="dd-list" id="offer-collection-dd"></div>
@@ -279,7 +277,6 @@
       <h1>Offers by Collection</h1>
 
       <label for="browse-collection">NFT Collection</label>
-      <!-- Custom dropdown (name-only list) -->
       <div class="dd-wrap">
         <input id="browse-collection" placeholder="Blank = all active, or click to pick a collection"/>
         <div class="dd-list" id="browse-collection-dd"></div>
@@ -327,6 +324,7 @@
     // Deployed contract address (Sonic)
     const ESCROW_ADDRESS = "0x3eB04112393e5Ea3A04B70d887589F5e8c4c65b4";
 
+    // Sonic mainnet params
     const REQUIRED_CHAIN_ID = 146;
     const SONIC_CHAIN_ID_HEX = '0x92';
     const SONIC_RPC = 'https://rpc.soniclabs.com';
@@ -348,6 +346,7 @@
 
       "function getActiveOffersByBuyer(address buyer) view returns (uint256[])",
       "function getOffersByBuyer(address buyer) view returns (uint256[])",
+
       "function getOffer(uint256 offerId) view returns (tuple(address buyer,address seller,uint256 amount,address nftContract,uint256 tokenId,uint256 fee,uint256 totalPaid,uint8 status,uint64 createdAt,uint64 fulfilledAt,uint64 cancelledAt,uint64 withdrawnAt,uint64 expiry))",
       "function getUserStats(address buyer) view returns (uint256 totalOffers,uint256 activeOffers,uint256 fulfilledOffers,uint256 cancelledOffers)",
 
@@ -428,7 +427,6 @@
           }
         }
 
-        // Refresh the custom dropdowns
         refreshDropdown("offer-collection", "offer-collection-dd");
         refreshDropdown("browse-collection", "browse-collection-dd");
       } catch (e) {
@@ -457,21 +455,13 @@
 
     /* ============================================================
        Custom dropdown: show NAME ONLY, but store address in data-attr
-       - Click input => dropdown shows
-       - Type => filters by name substring
-       - Click name => input becomes the address
        ============================================================ */
     function refreshDropdown(inputId, ddId) {
       const input = el(inputId);
       const dd = el(ddId);
       if (!input || !dd) return;
 
-      // Build a name-only list; keep addr in data attribute
-      // If the same name appears multiple times, we still show just name,
-      // and attach the address in title (hover) to reduce confusion.
       const filter = (input.value || "").trim().toLowerCase();
-
-      // If user is typing/pasting an address, don't spam suggestions
       const isAddressLike = /^0x[a-fA-F0-9]{0,40}$/.test(filter) || filter.length > 30;
 
       const items = !isAddressLike
@@ -495,7 +485,7 @@
         div.className = "dd-item";
         div.textContent = x.name || "(unavailable)";
         div.dataset.addr = x.addr;
-        div.title = x.addr; // hover shows address, but visible text is name-only
+        div.title = x.addr;
         dd.appendChild(div);
       }
     }
@@ -517,7 +507,6 @@
       const dd = el(ddId);
       if (!input || !dd) return;
 
-      // Open on focus/click
       const open = () => {
         refreshDropdown(inputId, ddId);
         showDropdown(ddId);
@@ -526,27 +515,24 @@
       input.addEventListener("focus", open);
       input.addEventListener("click", open);
 
-      // Filter as the user types (name filtering)
       input.addEventListener("input", () => {
         refreshDropdown(inputId, ddId);
         showDropdown(ddId);
-        onPicked?.(null); // means "manual typing" (e.g. pasted address)
+        onPicked?.(null);
       });
 
-      // Use mousedown so selection happens before input blur
       dd.addEventListener("mousedown", (e) => {
         const target = e.target.closest(".dd-item");
         if (!target) return;
 
         const addr = target.dataset.addr;
         if (addr) {
-          input.value = addr;              // auto populate address
+          input.value = addr;
           hideDropdown(ddId);
           onPicked?.(addr);
         }
       });
 
-      // Close shortly after blur to allow click selection
       input.addEventListener("blur", () => setTimeout(() => hideDropdown(ddId), 120));
     }
 
@@ -573,7 +559,8 @@
     }
 
     /* ============================================================
-       Image preview (more reliable): IPFS + Arweave/ArDrive support
+       Image preview (IPFS + Arweave/ArDrive)
+       UPDATED: check tokenId 1, if no image then tokenId 10, then stop
        ============================================================ */
     const IPFS_GATEWAYS = [
       "https://ipfs.io/ipfs/",
@@ -599,7 +586,7 @@
       if (u.startsWith("data:")) return [u];
       if (isLikelyIpfs(u)) return ipfsToGateways(u);
       if (isLikelyAr(u)) return [normalizeArUri(u)];
-      return [u]; // includes arweave.net, ardrive.io, etc.
+      return [u];
     }
 
     async function fetchWithTimeout(url, ms = 9000) {
@@ -642,26 +629,35 @@
       throw lastErr || new Error("No working metadata URL");
     }
 
-    async function getFirstTokenUriThatWorks(nftContract) {
-      const tries = [1, 0, 2, 10, 100];
-      for (const tid of tries) {
-        try {
-          const uri = await nftContract.tokenURI(tid);
-          if (uri && String(uri).trim()) return uri;
-        } catch {}
+    function extractImageField(meta) {
+      if (!meta) return null;
+      return meta.image || meta.image_url || meta.imageURI || meta.imageUri || meta.image_data || null;
+    }
+
+    async function getPreviewImageUrlForTokenId(nft, tokenId) {
+      try {
+        const tokenUri = await nft.tokenURI(tokenId);
+        if (!tokenUri || !String(tokenUri).trim()) return null;
+
+        const meta = await fetchFirstWorkingJson(tokenUri);
+        const imageField = extractImageField(meta);
+        if (!imageField || !String(imageField).trim()) return null;
+
+        const imgCandidates = normalizeResourceCandidates(String(imageField));
+        return imgCandidates.length ? imgCandidates[0] : null;
+      } catch {
+        return null;
       }
-      return null;
     }
 
     async function loadPreviewImage() {
       const addr = normalizeCollectionInput(el('browse-collection'));
       const imgEl = el('nft-preview');
 
-      if (!ethers.utils.isAddress(addr)) {
-        imgEl.style.display = 'none';
-        imgEl.removeAttribute("src");
-        return;
-      }
+      imgEl.style.display = 'none';
+      imgEl.removeAttribute("src");
+
+      if (!ethers.utils.isAddress(addr)) return;
 
       try {
         const nft = new ethers.Contract(
@@ -670,33 +666,13 @@
           provider || new ethers.providers.JsonRpcProvider(SONIC_RPC)
         );
 
-        const tokenUri = await getFirstTokenUriThatWorks(nft);
-        if (!tokenUri) {
-          imgEl.style.display = 'none';
-          imgEl.removeAttribute("src");
-          return;
-        }
-
-        const meta = await fetchFirstWorkingJson(tokenUri);
-
-        const imageField = meta.image || meta.image_url || meta.imageURI || meta.imageUri || meta.image_data;
-        if (!imageField) {
-          imgEl.style.display = 'none';
-          imgEl.removeAttribute("src");
-          return;
-        }
-
-        const imgCandidates = normalizeResourceCandidates(String(imageField));
-        const finalImgUrl = imgCandidates[0];
-
-        if (!finalImgUrl) {
-          imgEl.style.display = 'none';
-          imgEl.removeAttribute("src");
-          return;
-        }
+        // tokenId 1 -> if no image then tokenId 10 -> stop after that
+        let finalImgUrl = await getPreviewImageUrlForTokenId(nft, 1);
+        if (!finalImgUrl) finalImgUrl = await getPreviewImageUrlForTokenId(nft, 10);
+        if (!finalImgUrl) return;
 
         imgEl.onerror = () => { imgEl.style.display = "none"; };
-        imgEl.onload = () => { imgEl.style.display = "block"; };
+        imgEl.onload  = () => { imgEl.style.display = "block"; };
 
         imgEl.src = finalImgUrl;
         imgEl.style.display = 'block';
@@ -1108,6 +1084,10 @@
       }
     }
 
+    /* ============================================================
+       UPDATED: My Active Offers includes expired offers that are still Status.Active
+       (uses getOffersByBuyer, then filters status==Active locally)
+       ============================================================ */
     async function loadMyOffers() {
       if (!escrowRead || !account) {
         el('my-offers-status').textContent = 'Connect wallet first';
@@ -1119,43 +1099,50 @@
       sel.innerHTML = '';
 
       try {
-        const ids = await escrowRead.getActiveOffersByBuyer(account);
-        if (!ids.length) {
+        // Use full history so we include Active-but-expired offers
+        const allIds = await escrowRead.getOffersByBuyer(account);
+
+        const activeOffers = [];
+        for (const id of allIds) {
+          const offer = await escrowRead.getOffer(id);
+          // Status enum: 1 = Active
+          if (offer.status === 1) activeOffers.push({ id: id.toString(), offer });
+        }
+
+        if (!activeOffers.length) {
           el('my-offers-status').textContent = 'No active offers';
           return;
         }
 
-        const offers = [];
-        for (const id of ids) {
-          const offer = await escrowRead.getOffer(id);
-          offers.push({ id: id.toString(), offer });
-        }
+        const uniqueCollections = Array.from(
+          new Set(activeOffers.map(x => (x.offer.nftContract || '').toLowerCase()))
+        ).filter(a => ethers.utils.isAddress(a));
 
-        const uniqueCollections = Array.from(new Set(offers.map(x => (x.offer.nftContract || '').toLowerCase())))
-          .filter(a => ethers.utils.isAddress(a));
         await Promise.all(uniqueCollections.map(a => getCollectionName(a)));
 
-        for (const { id, offer } of offers) {
+        for (const { id, offer } of activeOffers) {
           const opt = document.createElement('option');
           opt.value = id;
 
           const amount = ethers.utils.formatEther(offer.amount);
 
-          let expiry;
+          let expiryText;
           if (offer.expiry.toString() === '0') {
-            expiry = 'no expiry';
+            expiryText = 'no expiry';
           } else {
             const ts = Number(offer.expiry) * 1000;
             const expired = Date.now() > ts;
-            expiry = expired ? `expired (${new Date(ts).toLocaleString()})` : new Date(ts).toLocaleString();
+            expiryText = expired
+              ? `expired (${new Date(ts).toLocaleString()})`
+              : new Date(ts).toLocaleString();
           }
 
           const name = await getCollectionName(offer.nftContract);
-          opt.textContent = `${name} — ${amount} S — ${expiry}`;
+          opt.textContent = `${name} — ${amount} S — ${expiryText}`;
           sel.appendChild(opt);
         }
 
-        el('my-offers-status').textContent = `Loaded ${ids.length} offers`;
+        el('my-offers-status').textContent = `Loaded ${activeOffers.length} offers`;
       } catch (e) {
         el('my-offers-status').textContent = e.message || 'Load failed';
       }
@@ -1226,19 +1213,17 @@
 
     // Attach dropdown behavior to both inputs
     attachDropdownBehavior("offer-collection", "offer-collection-dd", async (addr) => {
-      // If user picked a name -> addr set; update name label
       if (addr) await loadOfferCollectionName();
     });
 
     attachDropdownBehavior("browse-collection", "browse-collection-dd", async (addr) => {
-      // If user picked a name -> addr set; load preview + offers
       if (addr) {
         await loadPreviewImage();
         await loadCollectionOffers();
       }
     });
 
-    // Also keep these behaviours for manual paste/type:
+    // Manual paste/type:
     el('browse-collection').addEventListener('input', () => {
       loadPreviewImage();
       scheduleBrowseOffersLoad();
