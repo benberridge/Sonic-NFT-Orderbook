@@ -683,17 +683,26 @@
       }
     }
 
+    /* ============================================================
+       Prevent duplicate "Active Offers" entries caused by overlapping loads
+       (e.g. filter then clear filter). We stamp each load and ignore stale results.
+       ============================================================ */
+    let offersLoadToken = 0;
+    const bumpOffersLoadToken = () => (++offersLoadToken);
+    const isCurrentOffersLoad = (token) => token === offersLoadToken;
+
     /* ===== Offers by Collection: Debounced load ===== */
     let browseOffersTimer = null;
 
     function scheduleBrowseOffersLoad() {
+      const token = bumpOffersLoadToken();
       clearTimeout(browseOffersTimer);
       browseOffersTimer = setTimeout(async () => {
         const input = el('browse-collection');
         const val = (input.value || "").trim();
 
         if (!val) {
-          await loadAllActiveOffers();
+          await loadAllActiveOffers(token);
           return;
         }
 
@@ -702,12 +711,13 @@
         const status = el('collection-offers-status');
 
         if (!ethers.utils.isAddress(nft)) {
+          if (!isCurrentOffersLoad(token)) return;
           sel.innerHTML = '';
           status.textContent = 'Invalid collection address';
           return;
         }
 
-        await loadCollectionOffers();
+        await loadCollectionOffers(token);
       }, 250);
     }
 
@@ -820,7 +830,8 @@
         refreshDropdown("browse-collection", "browse-collection-dd");
       }
 
-      await loadAllActiveOffers();
+      const token = bumpOffersLoadToken();
+      await loadAllActiveOffers(token);
       scheduleOfferCollectionNameLoad();
     }
 
@@ -907,19 +918,22 @@
         await loadMyOffers();
 
         const browseVal = (el('browse-collection').value || "").trim();
-        if (!browseVal) await loadAllActiveOffers();
-        else await loadCollectionOffers();
+        const token = bumpOffersLoadToken();
+        if (!browseVal) await loadAllActiveOffers(token);
+        else await loadCollectionOffers(token);
 
       } catch (e) {
         el('offer-status').textContent = e.message || 'Create failed';
       }
     }
 
-    async function loadAllActiveOffers() {
+    async function loadAllActiveOffers(token) {
       if (!escrowRead) {
         el('collection-offers-status').textContent = 'Connect wallet first';
         return;
       }
+      if (token == null) token = bumpOffersLoadToken();
+      if (!isCurrentOffersLoad(token)) return;
 
       el('collection-offers-status').textContent = 'Loading all active offers…';
       const sel = el('collection-offers');
@@ -927,27 +941,38 @@
 
       try {
         const ids = await escrowRead.getActiveOffers(ethers.constants.AddressZero);
+        if (!isCurrentOffersLoad(token)) return;
 
-        if (!ids.length) {
+        const idStrings = (ids || []).map(x => x.toString());
+        const uniqueIds = Array.from(new Set(idStrings));
+
+        if (!uniqueIds.length) {
           el('collection-offers-status').textContent = 'No active offers';
           return;
         }
 
         const offers = [];
-        for (const id of ids) {
+        for (const id of uniqueIds) {
+          if (!isCurrentOffersLoad(token)) return;
           const offer = await escrowRead.getOffer(id);
           offers.push({ id: id.toString(), offer });
         }
+        if (!isCurrentOffersLoad(token)) return;
 
         const uniq = Array.from(new Set(offers.map(x => (x.offer.nftContract || '').toLowerCase())))
           .filter(a => ethers.utils.isAddress(a));
         await Promise.all(uniq.map(a => getCollectionName(a)));
+        if (!isCurrentOffersLoad(token)) return;
 
         for (const { id, offer } of offers) {
+          if (!isCurrentOffersLoad(token)) return;
+
           const opt = document.createElement('option');
           opt.value = id;
 
           const name = await getCollectionName(offer.nftContract);
+          if (!isCurrentOffersLoad(token)) return;
+
           const amount = ethers.utils.formatEther(offer.amount);
           const expiry = offer.expiry.toString() === '0'
             ? 'no expiry'
@@ -957,18 +982,22 @@
           sel.appendChild(opt);
         }
 
+        if (!isCurrentOffersLoad(token)) return;
         el('collection-offers-status').textContent =
-          `Loaded ${ids.length} active offers (all collections)`;
+          `Loaded ${uniqueIds.length} active offers (all collections)`;
       } catch (e) {
+        if (!isCurrentOffersLoad(token)) return;
         el('collection-offers-status').textContent = e.message || 'Load failed';
       }
     }
 
-    async function loadCollectionOffers() {
+    async function loadCollectionOffers(token) {
       if (!escrowRead) {
         el('collection-offers-status').textContent = 'Connect wallet first';
         return;
       }
+      if (token == null) token = bumpOffersLoadToken();
+      if (!isCurrentOffersLoad(token)) return;
 
       const nft = normalizeCollectionInput(el('browse-collection'));
       if (!ethers.utils.isAddress(nft)) {
@@ -981,16 +1010,26 @@
       sel.innerHTML = '';
 
       const collectionName = await getCollectionName(nft);
+      if (!isCurrentOffersLoad(token)) return;
 
       try {
         const ids = await escrowRead.getActiveOffersByCollection(nft);
-        if (!ids.length) {
+        if (!isCurrentOffersLoad(token)) return;
+
+        const idStrings = (ids || []).map(x => x.toString());
+        const uniqueIds = Array.from(new Set(idStrings));
+
+        if (!uniqueIds.length) {
           el('collection-offers-status').textContent = 'No active offers';
           return;
         }
 
-        for (const id of ids) {
+        for (const id of uniqueIds) {
+          if (!isCurrentOffersLoad(token)) return;
+
           const offer = await escrowRead.getOffer(id);
+          if (!isCurrentOffersLoad(token)) return;
+
           const opt = document.createElement('option');
           opt.value = id.toString();
 
@@ -1003,8 +1042,10 @@
           sel.appendChild(opt);
         }
 
-        el('collection-offers-status').textContent = `Loaded ${ids.length} offers`;
+        if (!isCurrentOffersLoad(token)) return;
+        el('collection-offers-status').textContent = `Loaded ${uniqueIds.length} offers`;
       } catch (e) {
+        if (!isCurrentOffersLoad(token)) return;
         el('collection-offers-status').textContent = e.message || 'Load failed';
       }
     }
@@ -1075,8 +1116,9 @@
         await refreshUserStats();
 
         const browseVal = (el('browse-collection').value || "").trim();
-        if (!browseVal) await loadAllActiveOffers();
-        else await loadCollectionOffers();
+        const token = bumpOffersLoadToken();
+        if (!browseVal) await loadAllActiveOffers(token);
+        else await loadCollectionOffers(token);
 
         await loadFulfilledOffers();
       } catch (e) {
@@ -1170,8 +1212,9 @@
         await loadFulfilledOffers();
 
         const browseVal = (el('browse-collection').value || "").trim();
-        if (!browseVal) await loadAllActiveOffers();
-        else await loadCollectionOffers();
+        const token = bumpOffersLoadToken();
+        if (!browseVal) await loadAllActiveOffers(token);
+        else await loadCollectionOffers(token);
 
       } catch (e) {
         el('my-offers-status').textContent = e.message || 'Cancel failed';
@@ -1219,7 +1262,8 @@
     attachDropdownBehavior("browse-collection", "browse-collection-dd", async (addr) => {
       if (addr) {
         await loadPreviewImage();
-        await loadCollectionOffers();
+        const token = bumpOffersLoadToken();
+        await loadCollectionOffers(token);
       }
     });
 
