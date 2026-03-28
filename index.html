@@ -290,7 +290,13 @@
       <select id="collection-offers" size="8"></select>
 
       <label for="fulfil-token-id" class="small" style="margin-top:.5rem;">Token ID to sell into selected offer</label>
-      <input id="fulfil-token-id" type="number" min="0" placeholder="Your NFT tokenId"/>
+
+      <!-- UPDATED: tokenId picker dropdown (falls back to manual entry if not enumerable) -->
+      <div class="dd-wrap">
+        <input id="fulfil-token-id" type="number" min="0" placeholder="Your NFT tokenId (click for my tokens)"/>
+        <div class="dd-list" id="fulfil-token-dd"></div>
+      </div>
+      <div class="info small" id="fulfil-token-hint"></div>
 
       <button class="action" id="btn-fulfil-offer">Fulfil Offer</button>
       <div class="info small" id="collection-offers-status"></div>
@@ -354,7 +360,10 @@
       "function getCollectionsRange(uint256 start,uint256 count) view returns (tuple(address nftContract,string name)[])"
     ];
 
+    // UPDATED: include balanceOf + tokenOfOwnerByIndex for optional enumeration
     const ERC721_ABI = [
+      "function balanceOf(address) view returns (uint256)",
+      "function tokenOfOwnerByIndex(address,uint256) view returns (uint256)",
       "function ownerOf(uint256) view returns (address)",
       "function getApproved(uint256) view returns (address)",
       "function isApprovedForAll(address,address) view returns (bool)",
@@ -378,6 +387,13 @@
     // Feature detection
     let hasCollectionRegistry = false;
     let hasCreateOfferWithName = false;
+
+    // NEW: prevents duplicate offers (latest load wins)
+    let offersLoadSeq = 0;
+    function nextOffersLoadToken() { offersLoadSeq += 1; return offersLoadSeq; }
+
+    // NEW: token list request sequencing
+    let tokenListSeq = 0;
 
     const el = id => document.getElementById(id);
 
@@ -560,7 +576,7 @@
 
     /* ============================================================
        Image preview (IPFS + Arweave/ArDrive)
-       UPDATED: check tokenId 1, if no image then tokenId 10, then stop
+       tokenId 1 then tokenId 10 only
        ============================================================ */
     const IPFS_GATEWAYS = [
       "https://ipfs.io/ipfs/",
@@ -666,7 +682,6 @@
           provider || new ethers.providers.JsonRpcProvider(SONIC_RPC)
         );
 
-        // tokenId 1 -> if no image then tokenId 10 -> stop after that
         let finalImgUrl = await getPreviewImageUrlForTokenId(nft, 1);
         if (!finalImgUrl) finalImgUrl = await getPreviewImageUrlForTokenId(nft, 10);
         if (!finalImgUrl) return;
@@ -681,6 +696,95 @@
         imgEl.style.display = 'none';
         imgEl.removeAttribute("src");
       }
+    }
+
+    /* ===== TokenId dropdown for fulfil (ERC721Enumerable if available) ===== */
+    const ownedTokenCache = new Map(); // key: `${account}-${nft}` -> string[]
+    let lastOfferNftAddr = null;
+
+    function clearTokenPickerUI() {
+      const dd = el('fulfil-token-dd');
+      const hint = el('fulfil-token-hint');
+      dd.innerHTML = '';
+      dd.style.display = 'none';
+      hint.textContent = '';
+    }
+
+    async function loadOwnedTokenIdsEnumerable(nftAddr) {
+      if (!account || !ethers.utils.isAddress(nftAddr)) return [];
+
+      const key = `${account.toLowerCase()}-${nftAddr.toLowerCase()}`;
+      if (ownedTokenCache.has(key)) return ownedTokenCache.get(key);
+
+      const rpcProvider = provider || new ethers.providers.JsonRpcProvider(SONIC_RPC);
+      const nft = new ethers.Contract(nftAddr, ERC721_ABI, rpcProvider);
+
+      // Feature detect enumerable via balanceOf + tokenOfOwnerByIndex
+      let balance;
+      try {
+        balance = await nft.balanceOf(account);
+      } catch {
+        return [];
+      }
+
+      const n = balance.toNumber ? balance.toNumber() : Number(balance);
+      if (!Number.isFinite(n) || n <= 0) {
+        ownedTokenCache.set(key, []);
+        return [];
+      }
+
+      // Cap to protect UI for very large wallets
+      const CAP = 250;
+      const m = Math.min(n, CAP);
+
+      const ids = [];
+      for (let i = 0; i < m; i++) {
+        try {
+          const tid = await nft.tokenOfOwnerByIndex(account, i);
+          ids.push(tid.toString());
+        } catch {
+          // Not enumerable in practice -> fallback to manual
+          return [];
+        }
+      }
+
+      ownedTokenCache.set(key, ids);
+      return ids;
+    }
+
+    async function populateTokenDropdown(nftAddr) {
+      const dd = el('fulfil-token-dd');
+      const hint = el('fulfil-token-hint');
+      dd.innerHTML = '';
+      dd.style.display = 'none';
+
+      if (!account || !ethers.utils.isAddress(nftAddr)) {
+        hint.textContent = '';
+        return;
+      }
+
+      hint.textContent = 'Loading your token IDs…';
+      const mySeq = ++tokenListSeq;
+
+      const ids = await loadOwnedTokenIdsEnumerable(nftAddr);
+
+      if (mySeq !== tokenListSeq) return; // newer request started
+
+      if (!ids.length) {
+        hint.textContent = 'Token list not available for this collection (not enumerable). You can type tokenId manually.';
+        dd.style.display = 'none';
+        return;
+      }
+
+      hint.textContent = `Found ${ids.length} token(s). Click to select.`;
+      for (const id of ids) {
+        const div = document.createElement('div');
+        div.className = 'dd-item';
+        div.textContent = `Token #${id}`;
+        div.dataset.tokenId = id;
+        dd.appendChild(div);
+      }
+      dd.style.display = 'block';
     }
 
     /* ===== Offers by Collection: Debounced load ===== */
@@ -903,6 +1007,7 @@
         el('offer-status').textContent = 'Offer created';
 
         if (hasCollectionRegistry) await loadRecordedCollections();
+
         await refreshUserStats();
         await loadMyOffers();
 
@@ -915,18 +1020,23 @@
       }
     }
 
+    // UPDATED: guarded against duplicates
     async function loadAllActiveOffers() {
       if (!escrowRead) {
         el('collection-offers-status').textContent = 'Connect wallet first';
         return;
       }
 
+      const token = nextOffersLoadToken();
       el('collection-offers-status').textContent = 'Loading all active offers…';
       const sel = el('collection-offers');
       sel.innerHTML = '';
+      clearTokenPickerUI();
+      lastOfferNftAddr = null;
 
       try {
         const ids = await escrowRead.getActiveOffers(ethers.constants.AddressZero);
+        if (token !== offersLoadSeq) return;
 
         if (!ids.length) {
           el('collection-offers-status').textContent = 'No active offers';
@@ -936,18 +1046,23 @@
         const offers = [];
         for (const id of ids) {
           const offer = await escrowRead.getOffer(id);
+          if (token !== offersLoadSeq) return;
           offers.push({ id: id.toString(), offer });
         }
 
         const uniq = Array.from(new Set(offers.map(x => (x.offer.nftContract || '').toLowerCase())))
           .filter(a => ethers.utils.isAddress(a));
         await Promise.all(uniq.map(a => getCollectionName(a)));
+        if (token !== offersLoadSeq) return;
 
         for (const { id, offer } of offers) {
+          if (token !== offersLoadSeq) return;
           const opt = document.createElement('option');
           opt.value = id;
 
           const name = await getCollectionName(offer.nftContract);
+          if (token !== offersLoadSeq) return;
+
           const amount = ethers.utils.formatEther(offer.amount);
           const expiry = offer.expiry.toString() === '0'
             ? 'no expiry'
@@ -957,33 +1072,42 @@
           sel.appendChild(opt);
         }
 
+        if (token !== offersLoadSeq) return;
         el('collection-offers-status').textContent =
           `Loaded ${ids.length} active offers (all collections)`;
       } catch (e) {
+        if (token !== offersLoadSeq) return;
         el('collection-offers-status').textContent = e.message || 'Load failed';
       }
     }
 
+    // UPDATED: guarded against duplicates
     async function loadCollectionOffers() {
       if (!escrowRead) {
         el('collection-offers-status').textContent = 'Connect wallet first';
         return;
       }
 
-      const nft = normalizeCollectionInput(el('browse-collection'));
-      if (!ethers.utils.isAddress(nft)) {
+      const nftAddr = normalizeCollectionInput(el('browse-collection'));
+      if (!ethers.utils.isAddress(nftAddr)) {
         el('collection-offers-status').textContent = 'Invalid collection address';
         return;
       }
 
+      const token = nextOffersLoadToken();
       el('collection-offers-status').textContent = 'Loading…';
       const sel = el('collection-offers');
       sel.innerHTML = '';
+      clearTokenPickerUI();
+      lastOfferNftAddr = null;
 
-      const collectionName = await getCollectionName(nft);
+      const collectionName = await getCollectionName(nftAddr);
+      if (token !== offersLoadSeq) return;
 
       try {
-        const ids = await escrowRead.getActiveOffersByCollection(nft);
+        const ids = await escrowRead.getActiveOffersByCollection(nftAddr);
+        if (token !== offersLoadSeq) return;
+
         if (!ids.length) {
           el('collection-offers-status').textContent = 'No active offers';
           return;
@@ -991,6 +1115,8 @@
 
         for (const id of ids) {
           const offer = await escrowRead.getOffer(id);
+          if (token !== offersLoadSeq) return;
+
           const opt = document.createElement('option');
           opt.value = id.toString();
 
@@ -1003,8 +1129,10 @@
           sel.appendChild(opt);
         }
 
+        if (token !== offersLoadSeq) return;
         el('collection-offers-status').textContent = `Loaded ${ids.length} offers`;
       } catch (e) {
+        if (token !== offersLoadSeq) return;
         el('collection-offers-status').textContent = e.message || 'Load failed';
       }
     }
@@ -1084,10 +1212,6 @@
       }
     }
 
-    /* ============================================================
-       UPDATED: My Active Offers includes expired offers that are still Status.Active
-       (uses getOffersByBuyer, then filters status==Active locally)
-       ============================================================ */
     async function loadMyOffers() {
       if (!escrowRead || !account) {
         el('my-offers-status').textContent = 'Connect wallet first';
@@ -1099,13 +1223,11 @@
       sel.innerHTML = '';
 
       try {
-        // Use full history so we include Active-but-expired offers
         const allIds = await escrowRead.getOffersByBuyer(account);
 
         const activeOffers = [];
         for (const id of allIds) {
           const offer = await escrowRead.getOffer(id);
-          // Status enum: 1 = Active
           if (offer.status === 1) activeOffers.push({ id: id.toString(), offer });
         }
 
@@ -1211,7 +1333,45 @@
     el('btn-cancel-offer').onclick = cancelOffer;
     el('btn-withdraw-nft').onclick = withdrawNFT;
 
-    // Attach dropdown behavior to both inputs
+    // Offers by Collection: when offer selected -> populate token dropdown for that offer's collection
+    el('collection-offers').addEventListener('change', async () => {
+      clearTokenPickerUI();
+      const offerId = el('collection-offers').value;
+      if (!offerId || !escrowRead || !account) return;
+
+      try {
+        const offer = await escrowRead.getOffer(offerId);
+        const nftAddr = offer.nftContract;
+        lastOfferNftAddr = nftAddr;
+        await populateTokenDropdown(nftAddr);
+      } catch {
+        // ignore
+      }
+    });
+
+    // Token dropdown click
+    el('fulfil-token-dd').addEventListener('mousedown', (e) => {
+      const target = e.target.closest('.dd-item');
+      if (!target) return;
+      const id = target.dataset.tokenId;
+      if (!id) return;
+      el('fulfil-token-id').value = id;
+      el('fulfil-token-dd').style.display = 'none';
+    });
+    el('fulfil-token-id').addEventListener('blur', () => setTimeout(() => {
+      el('fulfil-token-dd').style.display = 'none';
+    }, 120));
+    el('fulfil-token-id').addEventListener('focus', async () => {
+      // If we already know the offer's collection and have a cache, show it
+      if (lastOfferNftAddr && account) {
+        const key = `${account.toLowerCase()}-${lastOfferNftAddr.toLowerCase()}`;
+        if (ownedTokenCache.has(key) && ownedTokenCache.get(key).length) {
+          await populateTokenDropdown(lastOfferNftAddr);
+        }
+      }
+    });
+
+    // Attach dropdown behavior to both collection inputs
     attachDropdownBehavior("offer-collection", "offer-collection-dd", async (addr) => {
       if (addr) await loadOfferCollectionName();
     });
@@ -1219,6 +1379,7 @@
     attachDropdownBehavior("browse-collection", "browse-collection-dd", async (addr) => {
       if (addr) {
         await loadPreviewImage();
+        // Use the guarded loader
         await loadCollectionOffers();
       }
     });
