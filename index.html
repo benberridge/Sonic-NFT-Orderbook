@@ -292,6 +292,11 @@
       <label for="fulfil-token-id" class="small" style="margin-top:.5rem;">Token ID to sell into selected offer</label>
       <input id="fulfil-token-id" type="number" min="0" placeholder="Your NFT tokenId"/>
 
+      <!-- NEW: preview image for the entered Token ID (shows only when tokenId is entered and image exists) -->
+      <div class="info" style="margin-top:.25rem;">
+        <img id="sell-token-preview" style="max-width:100%; border-radius:12px; display:none;" />
+      </div>
+
       <button class="action" id="btn-fulfil-offer">Fulfil Offer</button>
       <div class="info small" id="collection-offers-status"></div>
     </div>
@@ -684,6 +689,89 @@
     }
 
     /* ============================================================
+       NEW: Token ID preview (entered tokenId), uses selected offer's nftContract when possible
+       - Shows only when a tokenId is entered AND an image is found
+       - If no image (or invalid), stays hidden
+       ============================================================ */
+    let sellTokenPreviewTimer = null;
+    let sellTokenPreviewLoadToken = 0;
+
+    function hideSellTokenPreview() {
+      const imgEl = el('sell-token-preview');
+      if (!imgEl) return;
+      imgEl.style.display = 'none';
+      imgEl.removeAttribute("src");
+    }
+
+    function scheduleSellTokenPreviewLoad() {
+      const token = ++sellTokenPreviewLoadToken;
+      clearTimeout(sellTokenPreviewTimer);
+      sellTokenPreviewTimer = setTimeout(() => loadSellTokenPreview(token), 250);
+    }
+
+    async function loadSellTokenPreview(token) {
+      if (token !== sellTokenPreviewLoadToken) return;
+
+      const imgEl = el('sell-token-preview');
+      if (!imgEl) return;
+
+      imgEl.style.display = 'none';
+      imgEl.removeAttribute("src");
+
+      const tokenIdStr = (el('fulfil-token-id')?.value || "").trim();
+      if (!tokenIdStr) return;
+
+      // numeric only
+      if (!/^\d+$/.test(tokenIdStr)) return;
+
+      // Prefer the NFT contract of the selected offer (most accurate),
+      // otherwise fall back to the browse-collection input if it is an address.
+      let nftAddr = "";
+
+      const offerId = (el('collection-offers')?.value || "").trim();
+      if (offerId && escrowRead) {
+        try {
+          const offer = await escrowRead.getOffer(offerId);
+          nftAddr = offer?.nftContract || "";
+        } catch {
+          nftAddr = "";
+        }
+      }
+
+      if (!ethers.utils.isAddress(nftAddr)) {
+        const fallbackAddr = normalizeCollectionInput(el('browse-collection'));
+        if (ethers.utils.isAddress(fallbackAddr)) nftAddr = fallbackAddr;
+      }
+
+      if (!ethers.utils.isAddress(nftAddr)) return;
+
+      try {
+        const nft = new ethers.Contract(
+          nftAddr,
+          ERC721_ABI,
+          provider || new ethers.providers.JsonRpcProvider(SONIC_RPC)
+        );
+
+        const url = await getPreviewImageUrlForTokenId(nft, tokenIdStr);
+        if (token !== sellTokenPreviewLoadToken) return;
+        if (!url) return;
+
+        imgEl.onerror = () => {
+          imgEl.style.display = "none";
+          imgEl.removeAttribute("src");
+        };
+        imgEl.onload = () => {
+          imgEl.style.display = "block";
+        };
+
+        imgEl.src = url;
+        imgEl.style.display = "block";
+      } catch {
+        // stay hidden
+      }
+    }
+
+    /* ============================================================
        Prevent duplicate "Active Offers" entries caused by overlapping loads
        (e.g. filter then clear filter). We stamp each load and ignore stale results.
        ============================================================ */
@@ -714,6 +802,7 @@
           if (!isCurrentOffersLoad(token)) return;
           sel.innerHTML = '';
           status.textContent = 'Invalid collection address';
+          hideSellTokenPreview();
           return;
         }
 
@@ -938,6 +1027,7 @@
       el('collection-offers-status').textContent = 'Loading all active offers…';
       const sel = el('collection-offers');
       sel.innerHTML = '';
+      hideSellTokenPreview();
 
       try {
         const ids = await escrowRead.getActiveOffers(ethers.constants.AddressZero);
@@ -985,6 +1075,9 @@
         if (!isCurrentOffersLoad(token)) return;
         el('collection-offers-status').textContent =
           `Loaded ${uniqueIds.length} active offers (all collections)`;
+
+        // If tokenId is already entered, refresh its preview against the new offers list context
+        scheduleSellTokenPreviewLoad();
       } catch (e) {
         if (!isCurrentOffersLoad(token)) return;
         el('collection-offers-status').textContent = e.message || 'Load failed';
@@ -999,21 +1092,23 @@
       if (token == null) token = bumpOffersLoadToken();
       if (!isCurrentOffersLoad(token)) return;
 
-      const nft = normalizeCollectionInput(el('browse-collection'));
-      if (!ethers.utils.isAddress(nft)) {
+      const nftAddr = normalizeCollectionInput(el('browse-collection'));
+      if (!ethers.utils.isAddress(nftAddr)) {
         el('collection-offers-status').textContent = 'Invalid collection address';
+        hideSellTokenPreview();
         return;
       }
 
       el('collection-offers-status').textContent = 'Loading…';
       const sel = el('collection-offers');
       sel.innerHTML = '';
+      hideSellTokenPreview();
 
-      const collectionName = await getCollectionName(nft);
+      const collectionName = await getCollectionName(nftAddr);
       if (!isCurrentOffersLoad(token)) return;
 
       try {
-        const ids = await escrowRead.getActiveOffersByCollection(nft);
+        const ids = await escrowRead.getActiveOffersByCollection(nftAddr);
         if (!isCurrentOffersLoad(token)) return;
 
         const idStrings = (ids || []).map(x => x.toString());
@@ -1044,6 +1139,9 @@
 
         if (!isCurrentOffersLoad(token)) return;
         el('collection-offers-status').textContent = `Loaded ${uniqueIds.length} offers`;
+
+        // If tokenId is already entered, refresh its preview against the current offer selection context
+        scheduleSellTokenPreviewLoad();
       } catch (e) {
         if (!isCurrentOffersLoad(token)) return;
         el('collection-offers-status').textContent = e.message || 'Load failed';
@@ -1264,6 +1362,7 @@
         await loadPreviewImage();
         const token = bumpOffersLoadToken();
         await loadCollectionOffers(token);
+        scheduleSellTokenPreviewLoad();
       }
     });
 
@@ -1271,19 +1370,27 @@
     el('browse-collection').addEventListener('input', () => {
       loadPreviewImage();
       scheduleBrowseOffersLoad();
+      scheduleSellTokenPreviewLoad();
     });
     el('browse-collection').addEventListener('change', () => {
       loadPreviewImage();
       scheduleBrowseOffersLoad();
+      scheduleSellTokenPreviewLoad();
     });
 
     el('offer-collection').addEventListener('input', scheduleOfferCollectionNameLoad);
     el('offer-collection').addEventListener('change', scheduleOfferCollectionNameLoad);
 
+    // NEW: token-id preview events
+    el('fulfil-token-id').addEventListener('input', scheduleSellTokenPreviewLoad);
+    el('fulfil-token-id').addEventListener('change', scheduleSellTokenPreviewLoad);
+    el('collection-offers').addEventListener('change', scheduleSellTokenPreviewLoad);
+
     window.addEventListener('load', async () => {
       await rpcReportsCorrectChain();
       el('rolling-stats').classList.add('running');
       el('collection-offers-status').textContent = 'Connect wallet to load offers';
+      hideSellTokenPreview();
     });
   </script>
 </body>
