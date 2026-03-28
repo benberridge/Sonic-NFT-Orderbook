@@ -312,6 +312,11 @@
       <label for="withdraw-offer-id" class="small" style="margin-top:.75rem;">Fulfilled Offers (NFT Ready)</label>
       <select id="withdraw-offer-id" size="5"></select>
 
+      <!-- NEW: preview image for selected fulfilled offer's NFT (shows only when selection has image) -->
+      <div class="info" style="margin-top:.25rem;">
+        <img id="withdraw-token-preview" style="max-width:100%; border-radius:12px; display:none;" />
+      </div>
+
       <button class="action" id="btn-withdraw-nft">Withdraw NFT</button>
       <div class="info small" id="my-offers-status"></div>
     </div>
@@ -689,7 +694,7 @@
     }
 
     /* ============================================================
-       NEW: Token ID preview (entered tokenId), uses selected offer's nftContract when possible
+       Token ID preview (entered tokenId), uses selected offer's nftContract when possible
        - Shows only when a tokenId is entered AND an image is found
        - If no image (or invalid), stays hidden
        ============================================================ */
@@ -754,6 +759,78 @@
 
         const url = await getPreviewImageUrlForTokenId(nft, tokenIdStr);
         if (token !== sellTokenPreviewLoadToken) return;
+        if (!url) return;
+
+        imgEl.onerror = () => {
+          imgEl.style.display = "none";
+          imgEl.removeAttribute("src");
+        };
+        imgEl.onload = () => {
+          imgEl.style.display = "block";
+        };
+
+        imgEl.src = url;
+        imgEl.style.display = "block";
+      } catch {
+        // stay hidden
+      }
+    }
+
+    /* ============================================================
+       NEW: Withdraw preview (selected fulfilled offer)
+       - Shows only when a fulfilled offer is selected AND an image is found
+       - Uses offer.nftContract + offer.tokenId
+       ============================================================ */
+    let withdrawTokenPreviewTimer = null;
+    let withdrawTokenPreviewLoadToken = 0;
+
+    function hideWithdrawTokenPreview() {
+      const imgEl = el('withdraw-token-preview');
+      if (!imgEl) return;
+      imgEl.style.display = 'none';
+      imgEl.removeAttribute("src");
+    }
+
+    function scheduleWithdrawTokenPreviewLoad() {
+      const token = ++withdrawTokenPreviewLoadToken;
+      clearTimeout(withdrawTokenPreviewTimer);
+      withdrawTokenPreviewTimer = setTimeout(() => loadWithdrawTokenPreview(token), 250);
+    }
+
+    async function loadWithdrawTokenPreview(token) {
+      if (token !== withdrawTokenPreviewLoadToken) return;
+
+      const imgEl = el('withdraw-token-preview');
+      if (!imgEl) return;
+
+      imgEl.style.display = 'none';
+      imgEl.removeAttribute("src");
+
+      const offerId = (el('withdraw-offer-id')?.value || "").trim();
+      if (!offerId) return;
+
+      // If the placeholder "No fulfilled offers" is selected, it is disabled and value may be empty.
+      // We also ensure escrowRead exists.
+      if (!escrowRead) return;
+
+      try {
+        const offer = await escrowRead.getOffer(offerId);
+        if (token !== withdrawTokenPreviewLoadToken) return;
+
+        const nftAddr = offer?.nftContract || "";
+        const tokenId = offer?.tokenId != null ? offer.tokenId.toString() : "";
+
+        if (!ethers.utils.isAddress(nftAddr)) return;
+        if (!tokenId || !/^\d+$/.test(tokenId)) return;
+
+        const nft = new ethers.Contract(
+          nftAddr,
+          ERC721_ABI,
+          provider || new ethers.providers.JsonRpcProvider(SONIC_RPC)
+        );
+
+        const url = await getPreviewImageUrlForTokenId(nft, tokenId);
+        if (token !== withdrawTokenPreviewLoadToken) return;
         if (!url) return;
 
         imgEl.onerror = () => {
@@ -1152,6 +1229,7 @@
       if (!escrowRead || !account) return;
       const sel = el('withdraw-offer-id');
       sel.innerHTML = '';
+      hideWithdrawTokenPreview();
       try {
         const all = await escrowRead.getOffersByBuyer(account);
         for (const id of all) {
@@ -1169,6 +1247,8 @@
           opt.textContent = "No fulfilled offers";
           sel.appendChild(opt);
         }
+        // If user has a selection, try to preview it
+        scheduleWithdrawTokenPreviewLoad();
       } catch (e) {
         console.error("loadFulfilledOffers error:", e);
       }
@@ -1336,6 +1416,7 @@
         await tx.wait();
         el('my-offers-status').textContent = 'NFT withdrawn';
 
+        hideWithdrawTokenPreview();
         await refreshUserStats();
         await loadFulfilledOffers();
         await loadMyOffers();
@@ -1381,16 +1462,21 @@
     el('offer-collection').addEventListener('input', scheduleOfferCollectionNameLoad);
     el('offer-collection').addEventListener('change', scheduleOfferCollectionNameLoad);
 
-    // NEW: token-id preview events
+    // Token-id preview events
     el('fulfil-token-id').addEventListener('input', scheduleSellTokenPreviewLoad);
     el('fulfil-token-id').addEventListener('change', scheduleSellTokenPreviewLoad);
     el('collection-offers').addEventListener('change', scheduleSellTokenPreviewLoad);
+
+    // NEW: withdraw preview events
+    el('withdraw-offer-id').addEventListener('change', scheduleWithdrawTokenPreviewLoad);
+    el('withdraw-offer-id').addEventListener('click', scheduleWithdrawTokenPreviewLoad);
 
     window.addEventListener('load', async () => {
       await rpcReportsCorrectChain();
       el('rolling-stats').classList.add('running');
       el('collection-offers-status').textContent = 'Connect wallet to load offers';
       hideSellTokenPreview();
+      hideWithdrawTokenPreview();
     });
   </script>
 </body>
