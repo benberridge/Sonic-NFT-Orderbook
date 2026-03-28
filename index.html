@@ -191,6 +191,15 @@
       opacity: 0.8;
     }
 
+    /* NEW: inline "Check" link styling */
+    .neon-link {
+      color: var(--neon);
+      cursor: pointer;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .neon-link:hover { text-decoration: underline; }
+
     /* ===== Custom name-only dropdown ===== */
     .dd-wrap { position: relative; width: 100%; }
     .dd-list {
@@ -289,7 +298,9 @@
       <label for="collection-offers" class="small" style="margin-top:.5rem;">Active Offers</label>
       <select id="collection-offers" size="8"></select>
 
-      <label for="fulfil-token-id" class="small" style="margin-top:.5rem;">Token ID to sell into selected offer</label>
+      <label for="fulfil-token-id" class="small" style="margin-top:.5rem;">
+        Token ID to sell into selected offer - <span id="check-inventory" class="neon-link">Check</span>
+      </label>
       <input id="fulfil-token-id" type="number" min="0" placeholder="Your NFT tokenId"/>
 
       <!-- NEW: preview image for the entered Token ID (shows only when tokenId is entered and image exists) -->
@@ -777,7 +788,7 @@
     }
 
     /* ============================================================
-       NEW: Withdraw preview (selected fulfilled offer)
+       Withdraw preview (selected fulfilled offer)
        - Shows only when a fulfilled offer is selected AND an image is found
        - Uses offer.nftContract + offer.tokenId
        ============================================================ */
@@ -808,9 +819,6 @@
 
       const offerId = (el('withdraw-offer-id')?.value || "").trim();
       if (!offerId) return;
-
-      // If the placeholder "No fulfilled offers" is selected, it is disabled and value may be empty.
-      // We also ensure escrowRead exists.
       if (!escrowRead) return;
 
       try {
@@ -846,6 +854,45 @@
       } catch {
         // stay hidden
       }
+    }
+
+    /* ============================================================
+       NEW: "Check" link -> opens SonicScan inventory popup
+       - Uses connected wallet address
+       - Uses selected offer's nftContract if available, otherwise browse-collection address
+       ============================================================ */
+    async function getInventoryContractAddress() {
+      // Prefer selected offer's contract
+      const offerId = (el('collection-offers')?.value || "").trim();
+      if (offerId && escrowRead) {
+        try {
+          const offer = await escrowRead.getOffer(offerId);
+          const addr = offer?.nftContract || "";
+          if (ethers.utils.isAddress(addr)) return addr;
+        } catch { /* ignore */ }
+      }
+      // Fallback: browse collection input
+      const fallbackAddr = normalizeCollectionInput(el('browse-collection'));
+      if (ethers.utils.isAddress(fallbackAddr)) return fallbackAddr;
+      return "";
+    }
+
+    async function openInventoryPopup() {
+      if (!account) {
+        alert('Connect wallet first');
+        return;
+      }
+      const contract = await getInventoryContractAddress();
+      if (!ethers.utils.isAddress(contract)) {
+        alert('Select an offer or enter a valid collection address first');
+        return;
+      }
+      const url = `https://sonicscan.org/token/${contract}?a=${account}#inventory`;
+      window.open(
+        url,
+        'sonicscan_inventory',
+        'popup=yes,width=1100,height=800,menubar=no,toolbar=no,location=yes,status=no,scrollbars=yes,resizable=yes'
+      );
     }
 
     /* ============================================================
@@ -1247,7 +1294,6 @@
           opt.textContent = "No fulfilled offers";
           sel.appendChild(opt);
         }
-        // If user has a selection, try to preview it
         scheduleWithdrawTokenPreviewLoad();
       } catch (e) {
         console.error("loadFulfilledOffers error:", e);
@@ -1304,10 +1350,6 @@
       }
     }
 
-    /* ============================================================
-       UPDATED: My Active Offers includes expired offers that are still Status.Active
-       (uses getOffersByBuyer, then filters status==Active locally)
-       ============================================================ */
     async function loadMyOffers() {
       if (!escrowRead || !account) {
         el('my-offers-status').textContent = 'Connect wallet first';
@@ -1433,6 +1475,9 @@
     el('btn-cancel-offer').onclick = cancelOffer;
     el('btn-withdraw-nft').onclick = withdrawNFT;
 
+    // NEW: Check inventory link
+    el('check-inventory').onclick = openInventoryPopup;
+
     // Attach dropdown behavior to both inputs
     attachDropdownBehavior("offer-collection", "offer-collection-dd", async (addr) => {
       if (addr) await loadOfferCollectionName();
@@ -1465,9 +1510,11 @@
     // Token-id preview events
     el('fulfil-token-id').addEventListener('input', scheduleSellTokenPreviewLoad);
     el('fulfil-token-id').addEventListener('change', scheduleSellTokenPreviewLoad);
-    el('collection-offers').addEventListener('change', scheduleSellTokenPreviewLoad);
+    el('collection-offers').addEventListener('change', () => {
+      scheduleSellTokenPreviewLoad();
+    });
 
-    // NEW: withdraw preview events
+    // Withdraw preview events
     el('withdraw-offer-id').addEventListener('change', scheduleWithdrawTokenPreviewLoad);
     el('withdraw-offer-id').addEventListener('click', scheduleWithdrawTokenPreviewLoad);
 
