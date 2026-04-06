@@ -191,7 +191,7 @@
       opacity: 0.8;
     }
 
-    /* NEW: inline "Check" link styling */
+    /* inline "Check" link styling */
     .neon-link {
       color: var(--neon);
       cursor: pointer;
@@ -303,7 +303,6 @@
       </label>
       <input id="fulfil-token-id" type="number" min="0" placeholder="Your NFT tokenId"/>
 
-      <!-- NEW: preview image for the entered Token ID (shows only when tokenId is entered and image exists) -->
       <div class="info" style="margin-top:.25rem;">
         <img id="sell-token-preview" style="max-width:100%; border-radius:12px; display:none;" />
       </div>
@@ -323,7 +322,6 @@
       <label for="withdraw-offer-id" class="small" style="margin-top:.75rem;">Fulfilled Offers (NFT Ready)</label>
       <select id="withdraw-offer-id" size="5"></select>
 
-      <!-- NEW: preview image for selected fulfilled offer's NFT (shows only when selection has image) -->
       <div class="info" style="margin-top:.25rem;">
         <img id="withdraw-token-preview" style="max-width:100%; border-radius:12px; display:none;" />
       </div>
@@ -402,14 +400,64 @@
 
     const el = id => document.getElementById(id);
 
+    /* ============================================================
+       Faster offer loading helpers
+       - mapLimit: parallelize RPC calls with a safe concurrency limit
+       - DOM fragment batching for faster rendering
+       ============================================================ */
+    async function mapLimit(items, limit, fn) {
+      const arr = Array.from(items);
+      const out = new Array(arr.length);
+      let i = 0;
+      const workers = Array.from({ length: Math.min(limit, arr.length) }, async () => {
+        while (i < arr.length) {
+          const idx = i++;
+          out[idx] = await fn(arr[idx], idx);
+        }
+      });
+      await Promise.all(workers);
+      return out;
+    }
+
     /* ===== Cache: collection address -> name ===== */
     const collectionNameCache = new Map();
+
+    // NEW: best name lookup from on-chain registry (addr -> bestName)
+    const collectionBestNameByAddr = new Map();
+    function rebuildCollectionBestNameMap() {
+      collectionBestNameByAddr.clear();
+      for (const x of recordedCollections) {
+        const addr = (x.addr || "").toLowerCase();
+        if (!ethers.utils.isAddress(addr)) continue;
+        const nm = (x.name || "").trim();
+        // prefer non-empty names over empty
+        if (!collectionBestNameByAddr.has(addr)) {
+          collectionBestNameByAddr.set(addr, nm);
+        } else {
+          const prev = (collectionBestNameByAddr.get(addr) || "").trim();
+          if (!prev && nm) collectionBestNameByAddr.set(addr, nm);
+        }
+      }
+    }
 
     async function getCollectionName(addr) {
       if (!ethers.utils.isAddress(addr)) return null;
       const key = addr.toLowerCase();
+
+      // 1) cache
       if (collectionNameCache.has(key)) return collectionNameCache.get(key);
 
+      // 2) prefer contract registry name (fast, no extra RPC)
+      if (hasCollectionRegistry && collectionBestNameByAddr.has(key)) {
+        const regName = (collectionBestNameByAddr.get(key) || "").trim();
+        if (regName) {
+          collectionNameCache.set(key, regName);
+          return regName;
+        }
+        // If registry has empty name, we keep compatibility by trying on-chain ERC721 name once.
+      }
+
+      // 3) fallback: ask the ERC721 contract for name (1 RPC per unique collection)
       try {
         const rpcProvider = provider || new ethers.providers.JsonRpcProvider(SONIC_RPC);
         const nft = new ethers.Contract(addr, ERC721_ABI, rpcProvider);
@@ -438,16 +486,17 @@
         const total = await escrowRead.getCollectionCount();
         const n = total.toNumber ? total.toNumber() : Number(total);
 
-        const PAGE = 100;
+        const PAGE = 200; // slightly larger page for fewer RPCs
         for (let start = 0; start < n; start += PAGE) {
           const page = await escrowRead.getCollectionsRange(start, Math.min(PAGE, n - start));
           for (const item of page) {
             const addr = item.nftContract;
-            const name = (item.name && String(item.name).trim()) ? String(item.name).trim() : "(unavailable)";
+            const name = (item.name && String(item.name).trim()) ? String(item.name).trim() : "";
             if (ethers.utils.isAddress(addr)) recordedCollections.push({ addr, name });
           }
         }
 
+        rebuildCollectionBestNameMap();
         refreshDropdown("offer-collection", "offer-collection-dd");
         refreshDropdown("browse-collection", "browse-collection-dd");
       } catch (e) {
@@ -504,7 +553,7 @@
       for (const x of items) {
         const div = document.createElement("div");
         div.className = "dd-item";
-        div.textContent = x.name || "(unavailable)";
+        div.textContent = (x.name && x.name.trim()) ? x.name : "(unavailable)";
         div.dataset.addr = x.addr;
         div.title = x.addr;
         dd.appendChild(div);
@@ -581,7 +630,6 @@
 
     /* ============================================================
        Image preview (IPFS + Arweave/ArDrive)
-       UPDATED: check tokenId 1, if no image then tokenId 10, then stop
        ============================================================ */
     const IPFS_GATEWAYS = [
       "https://ipfs.io/ipfs/",
@@ -687,7 +735,6 @@
           provider || new ethers.providers.JsonRpcProvider(SONIC_RPC)
         );
 
-        // tokenId 1 -> if no image then tokenId 10 -> stop after that
         let finalImgUrl = await getPreviewImageUrlForTokenId(nft, 1);
         if (!finalImgUrl) finalImgUrl = await getPreviewImageUrlForTokenId(nft, 10);
         if (!finalImgUrl) return;
@@ -705,9 +752,7 @@
     }
 
     /* ============================================================
-       Token ID preview (entered tokenId), uses selected offer's nftContract when possible
-       - Shows only when a tokenId is entered AND an image is found
-       - If no image (or invalid), stays hidden
+       Token ID preview (entered tokenId)
        ============================================================ */
     let sellTokenPreviewTimer = null;
     let sellTokenPreviewLoadToken = 0;
@@ -736,12 +781,8 @@
 
       const tokenIdStr = (el('fulfil-token-id')?.value || "").trim();
       if (!tokenIdStr) return;
-
-      // numeric only
       if (!/^\d+$/.test(tokenIdStr)) return;
 
-      // Prefer the NFT contract of the selected offer (most accurate),
-      // otherwise fall back to the browse-collection input if it is an address.
       let nftAddr = "";
 
       const offerId = (el('collection-offers')?.value || "").trim();
@@ -789,8 +830,6 @@
 
     /* ============================================================
        Withdraw preview (selected fulfilled offer)
-       - Shows only when a fulfilled offer is selected AND an image is found
-       - Uses offer.nftContract + offer.tokenId
        ============================================================ */
     let withdrawTokenPreviewTimer = null;
     let withdrawTokenPreviewLoadToken = 0;
@@ -857,12 +896,9 @@
     }
 
     /* ============================================================
-       NEW: "Check" link -> opens SonicScan inventory popup
-       - Uses connected wallet address
-       - Uses selected offer's nftContract if available, otherwise browse-collection address
+       "Check" link -> SonicScan inventory popup
        ============================================================ */
     async function getInventoryContractAddress() {
-      // Prefer selected offer's contract
       const offerId = (el('collection-offers')?.value || "").trim();
       if (offerId && escrowRead) {
         try {
@@ -871,7 +907,6 @@
           if (ethers.utils.isAddress(addr)) return addr;
         } catch { /* ignore */ }
       }
-      // Fallback: browse collection input
       const fallbackAddr = normalizeCollectionInput(el('browse-collection'));
       if (ethers.utils.isAddress(fallbackAddr)) return fallbackAddr;
       return "";
@@ -897,7 +932,6 @@
 
     /* ============================================================
        Prevent duplicate "Active Offers" entries caused by overlapping loads
-       (e.g. filter then clear filter). We stamp each load and ignore stale results.
        ============================================================ */
     let offersLoadToken = 0;
     const bumpOffersLoadToken = () => (++offersLoadToken);
@@ -1033,18 +1067,26 @@
       el('wallet-status').textContent = 'Connected';
 
       await refreshUserStats();
-      await loadFulfilledOffers();
-      await loadMyOffers();
 
+      // Load registry first (helps offer rendering avoid extra ERC721.name calls)
       if (hasCollectionRegistry) await loadRecordedCollections();
       else {
         recordedCollections = [];
+        rebuildCollectionBestNameMap();
         refreshDropdown("offer-collection", "offer-collection-dd");
         refreshDropdown("browse-collection", "browse-collection-dd");
       }
 
+      // Load user sections (parallelized internally)
+      await Promise.all([
+        loadFulfilledOffers(),
+        loadMyOffers()
+      ]);
+
+      // Load offers list
       const token = bumpOffersLoadToken();
       await loadAllActiveOffers(token);
+
       scheduleOfferCollectionNameLoad();
     }
 
@@ -1140,6 +1182,13 @@
       }
     }
 
+    /* ============================================================
+       FAST PATH: Active offers loading
+       Improvements:
+       - Parallel getOffer calls with mapLimit (limit 12)
+       - Use registry/cached names (avoid ERC721.name calls where possible)
+       - Batch DOM updates via DocumentFragment
+       ============================================================ */
     async function loadAllActiveOffers(token) {
       if (!escrowRead) {
         el('collection-offers-status').textContent = 'Connect wallet first';
@@ -1165,42 +1214,50 @@
           return;
         }
 
-        const offers = [];
-        for (const id of uniqueIds) {
-          if (!isCurrentOffersLoad(token)) return;
+        // Fetch offer details in parallel (safe concurrency)
+        const offers = await mapLimit(uniqueIds, 12, async (id) => {
+          if (!isCurrentOffersLoad(token)) return null;
           const offer = await escrowRead.getOffer(id);
-          offers.push({ id: id.toString(), offer });
-        }
+          return { id: id.toString(), offer };
+        });
+
         if (!isCurrentOffersLoad(token)) return;
 
-        const uniq = Array.from(new Set(offers.map(x => (x.offer.nftContract || '').toLowerCase())))
-          .filter(a => ethers.utils.isAddress(a));
-        await Promise.all(uniq.map(a => getCollectionName(a)));
+        const filtered = offers.filter(Boolean);
+
+        // Prime name cache for unique collections (registry-based fast)
+        const uniqAddrs = Array.from(new Set(
+          filtered.map(x => (x.offer.nftContract || '').toLowerCase())
+        )).filter(a => ethers.utils.isAddress(a));
+
+        await Promise.all(uniqAddrs.map(a => getCollectionName(a)));
         if (!isCurrentOffersLoad(token)) return;
 
-        for (const { id, offer } of offers) {
+        // Render with a fragment (faster)
+        const frag = document.createDocumentFragment();
+
+        for (const { id, offer } of filtered) {
           if (!isCurrentOffersLoad(token)) return;
 
           const opt = document.createElement('option');
           opt.value = id;
 
           const name = await getCollectionName(offer.nftContract);
-          if (!isCurrentOffersLoad(token)) return;
-
           const amount = ethers.utils.formatEther(offer.amount);
           const expiry = offer.expiry.toString() === '0'
             ? 'no expiry'
             : new Date(Number(offer.expiry) * 1000).toLocaleString();
 
           opt.textContent = `${name} — ${amount} S — expiry: ${expiry}`;
-          sel.appendChild(opt);
+          frag.appendChild(opt);
         }
 
         if (!isCurrentOffersLoad(token)) return;
+        sel.appendChild(frag);
+
         el('collection-offers-status').textContent =
           `Loaded ${uniqueIds.length} active offers (all collections)`;
 
-        // If tokenId is already entered, refresh its preview against the new offers list context
         scheduleSellTokenPreviewLoad();
       } catch (e) {
         if (!isCurrentOffersLoad(token)) return;
@@ -1243,14 +1300,21 @@
           return;
         }
 
-        for (const id of uniqueIds) {
-          if (!isCurrentOffersLoad(token)) return;
-
+        const offers = await mapLimit(uniqueIds, 12, async (id) => {
+          if (!isCurrentOffersLoad(token)) return null;
           const offer = await escrowRead.getOffer(id);
-          if (!isCurrentOffersLoad(token)) return;
+          return { id: id.toString(), offer };
+        });
+
+        if (!isCurrentOffersLoad(token)) return;
+
+        const frag = document.createDocumentFragment();
+        for (const x of offers) {
+          if (!x) continue;
+          const { id, offer } = x;
 
           const opt = document.createElement('option');
-          opt.value = id.toString();
+          opt.value = id;
 
           const amount = ethers.utils.formatEther(offer.amount);
           const expiry = offer.expiry.toString() === '0'
@@ -1258,13 +1322,13 @@
             : new Date(Number(offer.expiry) * 1000).toLocaleString();
 
           opt.textContent = `${collectionName} — ${amount} S — expiry: ${expiry}`;
-          sel.appendChild(opt);
+          frag.appendChild(opt);
         }
 
         if (!isCurrentOffersLoad(token)) return;
-        el('collection-offers-status').textContent = `Loaded ${uniqueIds.length} offers`;
+        sel.appendChild(frag);
 
-        // If tokenId is already entered, refresh its preview against the current offer selection context
+        el('collection-offers-status').textContent = `Loaded ${uniqueIds.length} offers`;
         scheduleSellTokenPreviewLoad();
       } catch (e) {
         if (!isCurrentOffersLoad(token)) return;
@@ -1277,26 +1341,116 @@
       const sel = el('withdraw-offer-id');
       sel.innerHTML = '';
       hideWithdrawTokenPreview();
+
       try {
         const all = await escrowRead.getOffersByBuyer(account);
-        for (const id of all) {
-          const offer = await escrowRead.getOffer(id);
-          if (offer.status === 3) {
-            const opt = document.createElement('option');
-            opt.value = id.toString();
-            opt.textContent = `Offer #${id} — NFT ready to withdraw`;
-            sel.appendChild(opt);
-          }
-        }
-        if (!sel.children.length) {
+        const ids = (all || []).map(x => x.toString());
+
+        if (!ids.length) {
           const opt = document.createElement('option');
           opt.disabled = true;
           opt.textContent = "No fulfilled offers";
           sel.appendChild(opt);
+          return;
         }
+
+        const offers = await mapLimit(ids, 12, async (id) => {
+          const offer = await escrowRead.getOffer(id);
+          return { id, offer };
+        });
+
+        const frag = document.createDocumentFragment();
+        let count = 0;
+
+        for (const { id, offer } of offers) {
+          if (offer.status === 3) {
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = `Offer #${id} — NFT ready to withdraw`;
+            frag.appendChild(opt);
+            count++;
+          }
+        }
+
+        if (!count) {
+          const opt = document.createElement('option');
+          opt.disabled = true;
+          opt.textContent = "No fulfilled offers";
+          frag.appendChild(opt);
+        }
+
+        sel.appendChild(frag);
         scheduleWithdrawTokenPreviewLoad();
       } catch (e) {
         console.error("loadFulfilledOffers error:", e);
+      }
+    }
+
+    async function loadMyOffers() {
+      if (!escrowRead || !account) {
+        el('my-offers-status').textContent = 'Connect wallet first';
+        return;
+      }
+
+      el('my-offers-status').textContent = 'Loading…';
+      const sel = el('my-offers');
+      sel.innerHTML = '';
+
+      try {
+        const all = await escrowRead.getOffersByBuyer(account);
+        const ids = (all || []).map(x => x.toString());
+
+        if (!ids.length) {
+          el('my-offers-status').textContent = 'No active offers';
+          return;
+        }
+
+        const offers = await mapLimit(ids, 12, async (id) => {
+          const offer = await escrowRead.getOffer(id);
+          return { id, offer };
+        });
+
+        const activeOffers = offers.filter(x => x.offer.status === 1);
+
+        if (!activeOffers.length) {
+          el('my-offers-status').textContent = 'No active offers';
+          return;
+        }
+
+        const uniqAddrs = Array.from(new Set(
+          activeOffers.map(x => (x.offer.nftContract || '').toLowerCase())
+        )).filter(a => ethers.utils.isAddress(a));
+
+        await Promise.all(uniqAddrs.map(a => getCollectionName(a)));
+
+        const frag = document.createDocumentFragment();
+
+        for (const { id, offer } of activeOffers) {
+          const opt = document.createElement('option');
+          opt.value = id;
+
+          const amount = ethers.utils.formatEther(offer.amount);
+
+          let expiryText;
+          if (offer.expiry.toString() === '0') {
+            expiryText = 'no expiry';
+          } else {
+            const ts = Number(offer.expiry) * 1000;
+            const expired = Date.now() > ts;
+            expiryText = expired
+              ? `expired (${new Date(ts).toLocaleString()})`
+              : new Date(ts).toLocaleString();
+          }
+
+          const name = await getCollectionName(offer.nftContract);
+          opt.textContent = `${name} — ${amount} S — ${expiryText}`;
+          frag.appendChild(opt);
+        }
+
+        sel.appendChild(frag);
+        el('my-offers-status').textContent = `Loaded ${activeOffers.length} offers`;
+      } catch (e) {
+        el('my-offers-status').textContent = e.message || 'Load failed';
       }
     }
 
@@ -1347,66 +1501,6 @@
         await loadFulfilledOffers();
       } catch (e) {
         el('collection-offers-status').textContent = e.message || 'Fulfil failed';
-      }
-    }
-
-    async function loadMyOffers() {
-      if (!escrowRead || !account) {
-        el('my-offers-status').textContent = 'Connect wallet first';
-        return;
-      }
-
-      el('my-offers-status').textContent = 'Loading…';
-      const sel = el('my-offers');
-      sel.innerHTML = '';
-
-      try {
-        // Use full history so we include Active-but-expired offers
-        const allIds = await escrowRead.getOffersByBuyer(account);
-
-        const activeOffers = [];
-        for (const id of allIds) {
-          const offer = await escrowRead.getOffer(id);
-          // Status enum: 1 = Active
-          if (offer.status === 1) activeOffers.push({ id: id.toString(), offer });
-        }
-
-        if (!activeOffers.length) {
-          el('my-offers-status').textContent = 'No active offers';
-          return;
-        }
-
-        const uniqueCollections = Array.from(
-          new Set(activeOffers.map(x => (x.offer.nftContract || '').toLowerCase()))
-        ).filter(a => ethers.utils.isAddress(a));
-
-        await Promise.all(uniqueCollections.map(a => getCollectionName(a)));
-
-        for (const { id, offer } of activeOffers) {
-          const opt = document.createElement('option');
-          opt.value = id;
-
-          const amount = ethers.utils.formatEther(offer.amount);
-
-          let expiryText;
-          if (offer.expiry.toString() === '0') {
-            expiryText = 'no expiry';
-          } else {
-            const ts = Number(offer.expiry) * 1000;
-            const expired = Date.now() > ts;
-            expiryText = expired
-              ? `expired (${new Date(ts).toLocaleString()})`
-              : new Date(ts).toLocaleString();
-          }
-
-          const name = await getCollectionName(offer.nftContract);
-          opt.textContent = `${name} — ${amount} S — ${expiryText}`;
-          sel.appendChild(opt);
-        }
-
-        el('my-offers-status').textContent = `Loaded ${activeOffers.length} offers`;
-      } catch (e) {
-        el('my-offers-status').textContent = e.message || 'Load failed';
       }
     }
 
@@ -1474,8 +1568,6 @@
     el('btn-fulfil-offer').onclick = fulfilOffer;
     el('btn-cancel-offer').onclick = cancelOffer;
     el('btn-withdraw-nft').onclick = withdrawNFT;
-
-    // NEW: Check inventory link
     el('check-inventory').onclick = openInventoryPopup;
 
     // Attach dropdown behavior to both inputs
@@ -1510,9 +1602,7 @@
     // Token-id preview events
     el('fulfil-token-id').addEventListener('input', scheduleSellTokenPreviewLoad);
     el('fulfil-token-id').addEventListener('change', scheduleSellTokenPreviewLoad);
-    el('collection-offers').addEventListener('change', () => {
-      scheduleSellTokenPreviewLoad();
-    });
+    el('collection-offers').addEventListener('change', scheduleSellTokenPreviewLoad);
 
     // Withdraw preview events
     el('withdraw-offer-id').addEventListener('change', scheduleWithdrawTokenPreviewLoad);
