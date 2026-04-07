@@ -700,13 +700,23 @@
 
     function extractImageField(meta) {
       if (!meta) return null;
-      return meta.image || meta.image_url || meta.imageURI || meta.imageUri || meta.image_data || null;
+      return meta.image || meta.image_url || meta.imageURI || meta.imageUri || meta.image_data || meta.animation_url || null;
     }
 
     async function getPreviewImageUrlForTokenId(nft, tokenId) {
       try {
         const tokenUri = await nft.tokenURI(tokenId);
         if (!tokenUri || !String(tokenUri).trim()) return null;
+        
+        const uri = String(tokenUri).trim();
+
+        if (uri.startsWith("data:image/")) {
+          return uri;
+        }
+
+        if (uri.startsWith("data:text/html")) {
+          return null;
+        }
 
         const meta = await fetchFirstWorkingJson(tokenUri);
         const imageField = extractImageField(meta);
